@@ -1,12 +1,8 @@
 import pino from 'pino';
 
-const isDev = process.env.NODE_ENV !== 'production';
-
-export const logger = isDev
-  ? pino({
-      transport: {
-        target: 'pino-pretty',
-        options: { colorize: true, translateTime: 'SYS:HH:MM:ss' },
-      },
-    })
-  : pino({ level: 'info' });
+// pino-pretty cannot be bundled inside a compiled Bun binary (it is loaded
+// via worker_threads at runtime and the path cannot be resolved inside the
+// single-file executable).  Use plain JSON output always.
+// For a readable local output pipe through pino-pretty CLI:
+//   bun run dev | bunx pino-pretty
+export const logger = pino({ level: 'info' });
