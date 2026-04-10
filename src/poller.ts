@@ -63,8 +63,9 @@ async function pollOnce(): Promise<void> {
     );
 
     for (const msg of incoming) {
+      msg.chat_id = msg.chat_id || chatId;
       const text = msg.content?.text ?? '';
-      if (!text) continue;
+      if (!text || text.startsWith('[Системное сообщение]')) continue;
 
       logger.info({ chatId, msgId: msg.id, text }, '← incoming');
 

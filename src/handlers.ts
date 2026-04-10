@@ -3,5 +3,5 @@ import { handleConversation } from './conversation.js';
 
 addHandler({
   match: () => true,
-  reply: (_text, msg, chat) => handleConversation(msg.chat_id, _text, chat),
+  reply: (_text, msg, chat) => handleConversation(chat?.id ?? msg.chat_id, _text, chat),
 });
