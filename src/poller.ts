@@ -12,6 +12,10 @@ import { processMessage } from './pattern-handler.js';
 const repliedMessages = new Set<string>();
 const MAX_CACHE = 10_000;
 
+// Unix timestamp (seconds) of the moment the bot started.
+// Messages created before this moment are always ignored.
+const BOT_START_TS = Math.floor(Date.now() / 1000);
+
 function trimCache(): void {
   if (repliedMessages.size > MAX_CACHE) {
     const overflow = repliedMessages.size - MAX_CACHE / 2;
@@ -52,7 +56,10 @@ async function pollOnce(): Promise<void> {
     }
 
     const incoming = messages.filter(
-      (m) => String(m.author_id) !== String(userId) && !repliedMessages.has(m.id),
+      (m) =>
+        String(m.author_id) !== String(userId) &&
+        !repliedMessages.has(m.id) &&
+        m.created >= BOT_START_TS,
     );
 
     for (const msg of incoming) {
