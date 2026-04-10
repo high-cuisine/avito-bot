@@ -24,6 +24,7 @@ COPY --from=builder /build/avito-bot .
 
 RUN mkdir -p /app/data
 
-ENV DB_PATH=/app/data/data.db
+ENV DB_PATH=/app/data/data.db \
+    NODE_ENV=production
 
 ENTRYPOINT ["./avito-bot"]

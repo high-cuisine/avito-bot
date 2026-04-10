@@ -15,6 +15,10 @@ export interface Config {
     port: number;
     url: string;
   };
+  api: {
+    port: number;
+    token: string;
+  };
 }
 
 export const config: Config = {
@@ -29,6 +33,10 @@ export const config: Config = {
   webhook: {
     port: parseInt(process.env.WEBHOOK_PORT ?? '3000', 10),
     url: process.env.WEBHOOK_URL ?? '',
+  },
+  api: {
+    port: parseInt(process.env.API_PORT ?? '3001', 10),
+    token: process.env.API_TOKEN ?? '',
   },
 };
 

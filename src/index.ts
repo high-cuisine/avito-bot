@@ -7,6 +7,7 @@ import './handlers.js';
 
 import { startPolling } from './poller.js';
 import { startWebhookServer } from './webhook-server.js';
+import { startApiServer } from './api-server.js';
 
 async function main(): Promise<void> {
   validateConfig();
@@ -17,6 +18,9 @@ async function main(): Promise<void> {
   await getAccessToken();
   const userId = await resolveUserId();
   logger.info('Operating as user_id = %s', userId);
+
+  // Always start the 1C API server
+  startApiServer();
 
   if (config.mode === 'webhook') {
     await startWebhookServer();

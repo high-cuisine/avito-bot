@@ -108,6 +108,17 @@ const stmtGetClients = db.prepare(
   'SELECT id, chat_id, item_id, client_name, cargo, route, payment_method, created_at FROM clients ORDER BY id DESC',
 );
 
+const stmtGetClientById = db.prepare(
+  'SELECT id, chat_id, item_id, client_name, cargo, route, payment_method, created_at FROM clients WHERE id = ?',
+);
+
+const stmtGetClientsSince = db.prepare(
+  `SELECT id, chat_id, item_id, client_name, cargo, route, payment_method, created_at
+   FROM clients WHERE created_at >= ? ORDER BY id ASC`,
+);
+
+const stmtDeleteClient = db.prepare('DELETE FROM clients WHERE id = ?');
+
 export function saveClient(data: SessionData & { chatId: string }): void {
   stmtInsertClient.run(
     data.chatId,
@@ -119,19 +130,19 @@ export function saveClient(data: SessionData & { chatId: string }): void {
   );
 }
 
-export function getClients(): ClientRecord[] {
-  const rows = stmtGetClients.all() as Array<{
-    id: number;
-    chat_id: string;
-    item_id: string | null;
-    client_name: string | null;
-    cargo: string | null;
-    route: string | null;
-    payment_method: string | null;
-    created_at: string;
-  }>;
+type ClientRow = {
+  id: number;
+  chat_id: string;
+  item_id: string | null;
+  client_name: string | null;
+  cargo: string | null;
+  route: string | null;
+  payment_method: string | null;
+  created_at: string;
+};
 
-  return rows.map((r) => ({
+function rowToRecord(r: ClientRow): ClientRecord {
+  return {
     id: r.id,
     chatId: r.chat_id,
     itemId: r.item_id,
@@ -140,5 +151,23 @@ export function getClients(): ClientRecord[] {
     route: r.route,
     paymentMethod: r.payment_method,
     createdAt: r.created_at,
-  }));
+  };
+}
+
+export function getClients(): ClientRecord[] {
+  return (stmtGetClients.all() as ClientRow[]).map(rowToRecord);
+}
+
+export function getClientById(id: number): ClientRecord | null {
+  const row = stmtGetClientById.get(id) as ClientRow | undefined;
+  return row ? rowToRecord(row) : null;
+}
+
+export function getClientsSince(since: string): ClientRecord[] {
+  return (stmtGetClientsSince.all(since) as ClientRow[]).map(rowToRecord);
+}
+
+export function deleteClient(id: number): boolean {
+  const result = stmtDeleteClient.run(id);
+  return result.changes > 0;
 }
