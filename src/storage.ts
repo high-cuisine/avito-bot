@@ -24,9 +24,17 @@ db.exec(`
     cargo          TEXT,
     route          TEXT,
     payment_method TEXT,
+    phone          TEXT,
     created_at     TEXT NOT NULL DEFAULT (datetime('now'))
   );
 `);
+
+// Backward-compatible migration for already existing DB files.
+try {
+  db.exec('ALTER TABLE clients ADD COLUMN phone TEXT');
+} catch {
+  // column already exists
+}
 
 // ─── Session types ────────────────────────────────────────────────────────────
 
@@ -36,6 +44,7 @@ export interface SessionData {
   cargo: string;
   route: string;
   paymentMethod: string;
+  phone: string;
 }
 
 export interface Session {
@@ -90,34 +99,50 @@ export interface ClientRecord {
   cargo: string | null;
   route: string | null;
   paymentMethod: string | null;
+  phone: string | null;
   createdAt: string;
 }
 
 const stmtInsertClient = db.prepare(`
-  INSERT INTO clients (chat_id, item_id, client_name, cargo, route, payment_method, created_at)
-  VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
+  INSERT INTO clients (chat_id, item_id, client_name, cargo, route, payment_method, phone, created_at)
+  VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))
   ON CONFLICT(chat_id) DO UPDATE SET item_id        = excluded.item_id,
                                      client_name    = excluded.client_name,
                                      cargo          = excluded.cargo,
                                      route          = excluded.route,
                                      payment_method = excluded.payment_method,
+                                     phone          = excluded.phone,
                                      created_at     = excluded.created_at
 `);
 
 const stmtGetClients = db.prepare(
-  'SELECT id, chat_id, item_id, client_name, cargo, route, payment_method, created_at FROM clients ORDER BY id DESC',
+  'SELECT id, chat_id, item_id, client_name, cargo, route, payment_method, phone, created_at FROM clients ORDER BY id DESC',
 );
 
 const stmtGetClientById = db.prepare(
-  'SELECT id, chat_id, item_id, client_name, cargo, route, payment_method, created_at FROM clients WHERE id = ?',
+  'SELECT id, chat_id, item_id, client_name, cargo, route, payment_method, phone, created_at FROM clients WHERE id = ?',
 );
 
 const stmtGetClientsSince = db.prepare(
-  `SELECT id, chat_id, item_id, client_name, cargo, route, payment_method, created_at
+  `SELECT id, chat_id, item_id, client_name, cargo, route, payment_method, phone, created_at
    FROM clients WHERE created_at >= ? ORDER BY id ASC`,
 );
 
 const stmtDeleteClient = db.prepare('DELETE FROM clients WHERE id = ?');
+const stmtGetClientByChatId = db.prepare(
+  'SELECT id, chat_id, item_id, client_name, cargo, route, payment_method, phone, created_at FROM clients WHERE chat_id = ?',
+);
+const stmtGetClientsMissingPhone = db.prepare(
+  `SELECT id, chat_id, item_id, client_name, cargo, route, payment_method, phone, created_at
+   FROM clients
+   WHERE phone IS NULL OR trim(phone) = ''
+   ORDER BY id ASC`,
+);
+const stmtUpdateClientPhoneByChatId = db.prepare(
+  `UPDATE clients
+   SET phone = ?
+   WHERE chat_id = ?`,
+);
 
 export function saveClient(data: SessionData & { chatId: string }): void {
   stmtInsertClient.run(
@@ -127,6 +152,7 @@ export function saveClient(data: SessionData & { chatId: string }): void {
     data.cargo || null,
     data.route || null,
     data.paymentMethod || null,
+    data.phone || null,
   );
 }
 
@@ -138,6 +164,7 @@ type ClientRow = {
   cargo: string | null;
   route: string | null;
   payment_method: string | null;
+  phone: string | null;
   created_at: string;
 };
 
@@ -150,6 +177,7 @@ function rowToRecord(r: ClientRow): ClientRecord {
     cargo: r.cargo,
     route: r.route,
     paymentMethod: r.payment_method,
+    phone: r.phone,
     createdAt: r.created_at,
   };
 }
@@ -161,6 +189,22 @@ export function getClients(): ClientRecord[] {
 export function getClientById(id: number): ClientRecord | null {
   const row = stmtGetClientById.get(id) as ClientRow | undefined;
   return row ? rowToRecord(row) : null;
+}
+
+export function getClientByChatId(chatId: string): ClientRecord | null {
+  const row = stmtGetClientByChatId.get(chatId) as ClientRow | undefined;
+  return row ? rowToRecord(row) : null;
+}
+
+export function getClientsMissingPhone(limit = 100): ClientRecord[] {
+  return (stmtGetClientsMissingPhone.all() as ClientRow[])
+    .slice(0, Math.max(0, limit))
+    .map(rowToRecord);
+}
+
+export function updateClientPhoneByChatId(chatId: string, phone: string): boolean {
+  const result = stmtUpdateClientPhoneByChatId.run(phone, chatId);
+  return result.changes > 0;
 }
 
 export function getClientsSince(since: string): ClientRecord[] {

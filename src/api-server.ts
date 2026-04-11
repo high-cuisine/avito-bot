@@ -74,6 +74,12 @@ const swaggerDocument = {
             description: 'Форма оплаты',
             example: 'Наличные',
           },
+          phone: {
+            type: 'string',
+            nullable: true,
+            description: 'Телефон клиента в нормализованном формате',
+            example: '+79161234567',
+          },
           createdAt: {
             type: 'string',
             format: 'date-time',

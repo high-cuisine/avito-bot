@@ -5,6 +5,8 @@ import {
   saveSession,
   deleteSession,
   saveClient,
+  getClientByChatId,
+  updateClientPhoneByChatId,
   type SessionData,
 } from './storage.js';
 
@@ -14,6 +16,9 @@ export const State = {
   ASK_CARGO: 'ASK_CARGO',
   ASK_ROUTE: 'ASK_ROUTE',
   ASK_PAYMENT: 'ASK_PAYMENT',
+  ASK_PHONE: 'ASK_PHONE',
+  ASK_PHONE_BACKFILL: 'ASK_PHONE_BACKFILL',
+  CONFIRM_PHONE_BACKFILL: 'CONFIRM_PHONE_BACKFILL',
   CONFIRM: 'CONFIRM',
 } as const;
 
@@ -22,7 +27,14 @@ type StateValue = (typeof State)[keyof typeof State];
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function emptyData(): SessionData {
-  return { itemId: '', clientName: '', cargo: '', route: '', paymentMethod: '' };
+  return {
+    itemId: '',
+    clientName: '',
+    cargo: '',
+    route: '',
+    paymentMethod: '',
+    phone: '',
+  };
 }
 
 function formatSummary(d: SessionData): string {
@@ -32,8 +44,23 @@ function formatSummary(d: SessionData): string {
     `2. Груз: ${d.cargo || '—'}`,
     `3. Маршрут: ${d.route || '—'}`,
     `4. Оплата: ${d.paymentMethod || '—'}`,
+    `5. Телефон: ${d.phone || '—'}`,
     '\nВсё верно? (Да / Нет)',
   ].join('\n');
+}
+
+function normalizePhone(text: string): string | null {
+  const digits = text.replace(/\D/g, '');
+  if (digits.length === 11 && digits.startsWith('8')) {
+    return `+7${digits.slice(1)}`;
+  }
+  if (digits.length === 11 && digits.startsWith('7')) {
+    return `+${digits}`;
+  }
+  if (digits.length === 10) {
+    return `+7${digits}`;
+  }
+  return null;
 }
 
 async function resolveClientInfo(
@@ -63,7 +90,9 @@ async function resolveClientInfo(
 }
 
 function isConfirmation(text: string): boolean {
-  return /^(да|yes|ок|ладно|верно|подтвержд)/i.test(text.trim());
+  return /^(да|yes|ок|ладно|верно|подтвержд|все\s*верно|всё\s*верно|договорились)/i.test(
+    text.trim(),
+  );
 }
 
 function isRejection(text: string): boolean {
@@ -85,6 +114,23 @@ export async function handleConversation(
 
   // ── New conversation ────────────────────────────────────────────────────────
   if (!session) {
+    const existingClient = getClientByChatId(chatId);
+    if (existingClient && !existingClient.phone) {
+      const data: SessionData = {
+        itemId: existingClient.itemId ?? '',
+        clientName: existingClient.clientName ?? '',
+        cargo: existingClient.cargo ?? '',
+        route: existingClient.route ?? '',
+        paymentMethod: existingClient.paymentMethod ?? '',
+        phone: '',
+      };
+      saveSession(chatId, State.ASK_PHONE_BACKFILL, data);
+      const greeting = data.clientName
+        ? `Здравствуйте, ${data.clientName}!`
+        : 'Здравствуйте!';
+      return `${greeting} Чтобы завершить заявку, укажите, пожалуйста, контактный номер телефона.`;
+    }
+
     const { clientName, itemId } = await resolveClientInfo(chatId, chatContext);
     const data: SessionData = { ...emptyData(), clientName, itemId };
     saveSession(chatId, State.ASK_CARGO, data);
@@ -115,8 +161,45 @@ export async function handleConversation(
   // ── Collect payment ─────────────────────────────────────────────────────────
   if (state === State.ASK_PAYMENT) {
     data.paymentMethod = text.trim();
+    saveSession(chatId, State.ASK_PHONE, data);
+    return 'Укажите, пожалуйста, контактный номер телефона для связи с менеджером.';
+  }
+
+  // ── Collect phone ───────────────────────────────────────────────────────────
+  if (state === State.ASK_PHONE) {
+    const phone = normalizePhone(text);
+    if (!phone) {
+      return 'Не удалось распознать номер. Отправьте номер в формате +7XXXXXXXXXX или 8XXXXXXXXXX.';
+    }
+    data.phone = phone;
     saveSession(chatId, State.CONFIRM, data);
     return formatSummary(data);
+  }
+
+  // ── Collect phone for old records ───────────────────────────────────────────
+  if (state === State.ASK_PHONE_BACKFILL) {
+    const phone = normalizePhone(text);
+    if (!phone) {
+      return 'Не удалось распознать номер. Отправьте номер в формате +7XXXXXXXXXX или 8XXXXXXXXXX.';
+    }
+    data.phone = phone;
+    saveSession(chatId, State.CONFIRM_PHONE_BACKFILL, data);
+    return `Подтвердите номер: ${phone}. Всё верно? (Да / Нет)`;
+  }
+
+  if (state === State.CONFIRM_PHONE_BACKFILL) {
+    if (isConfirmation(text)) {
+      updateClientPhoneByChatId(chatId, data.phone);
+      deleteSession(chatId);
+      const name = data.clientName || 'уважаемый клиент';
+      return `Спасибо, ${name}! Номер телефона сохранён.`;
+    }
+    if (isRejection(text)) {
+      data.phone = '';
+      saveSession(chatId, State.ASK_PHONE_BACKFILL, data);
+      return 'Хорошо, отправьте, пожалуйста, номер ещё раз.';
+    }
+    return 'Пожалуйста, ответьте «Да» или «Нет».';
   }
 
   // ── Confirm ─────────────────────────────────────────────────────────────────
@@ -134,6 +217,7 @@ export async function handleConversation(
       data.cargo = '';
       data.route = '';
       data.paymentMethod = '';
+      data.phone = '';
       saveSession(chatId, State.ASK_CARGO, data);
       return 'Хорошо, давайте заново. Какой характер груза?';
     }
