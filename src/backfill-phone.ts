@@ -1,7 +1,7 @@
-import { validateConfig } from './config.js';
-import { logger } from './logger.js';
-import { getAccessToken, sendMessage } from './avito-client.js';
-import { getClientsMissingPhone } from './storage.js';
+import { validateConfig } from './core/config.js';
+import { logger } from './core/logger.js';
+import { getAccessToken, sendMessage } from './integrations/avito/client.js';
+import { getClientsMissingPhone } from './infrastructure/storage/repository.js';
 
 const DEFAULT_LIMIT = 100;
 

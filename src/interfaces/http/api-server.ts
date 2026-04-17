@@ -1,13 +1,13 @@
 import express, { Request, Response, NextFunction } from 'express';
 import swaggerUi from 'swagger-ui-express';
-import { config } from './config.js';
-import { logger } from './logger.js';
+import { config } from '../../core/config.js';
+import { logger } from '../../core/logger.js';
 import {
   getClients,
   getClientById,
   getClientsSince,
   deleteClient,
-} from './storage.js';
+} from '../../infrastructure/storage/repository.js';
 
 // ─── OpenAPI spec ─────────────────────────────────────────────────────────────
 

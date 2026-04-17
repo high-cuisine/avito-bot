@@ -1,9 +1,7 @@
-import { config } from './config.js';
-import { logger } from './logger.js';
+import { config } from '../../core/config.js';
+import { logger } from '../../core/logger.js';
 
 const BASE = config.avito.baseUrl;
-
-// ─── Types ────────────────────────────────────────────────────────────────────
 
 export interface TokenResponse {
   access_token: string;
@@ -77,14 +75,10 @@ export interface GetMessagesParams {
   offset?: number;
 }
 
-// ─── Token cache ──────────────────────────────────────────────────────────────
-
 const tokenData: { accessToken: string | null; expiresAt: number } = {
   accessToken: null,
   expiresAt: 0,
 };
-
-// ─── Helpers ──────────────────────────────────────────────────────────────────
 
 async function fetchJson<T = unknown>(url: string, options: RequestInit = {}): Promise<T> {
   const res = await fetch(url, options);
@@ -103,15 +97,12 @@ async function authHeaders(): Promise<Record<string, string>> {
   };
 }
 
-// ─── Public API ───────────────────────────────────────────────────────────────
-
 export async function getAccessToken(): Promise<string> {
   if (tokenData.accessToken && Date.now() < tokenData.expiresAt) {
     return tokenData.accessToken;
   }
 
   logger.info('Requesting new access token…');
-
   const body = new URLSearchParams({
     grant_type: 'client_credentials',
     client_id: config.avito.clientId,
@@ -130,10 +121,8 @@ export async function getAccessToken(): Promise<string> {
   return tokenData.accessToken;
 }
 
-/** Resolve own Avito user_id (auto-detect if not set in env). */
 export async function resolveUserId(): Promise<string> {
   if (config.avito.userId) return config.avito.userId;
-
   const headers = await authHeaders();
   const data = await fetchJson<AvitoUser>(`${BASE}/core/v1/accounts/self`, { headers });
   config.avito.userId = String(data.id);
@@ -141,24 +130,17 @@ export async function resolveUserId(): Promise<string> {
   return config.avito.userId;
 }
 
-/** Get list of chats. */
 export async function getChats(params: GetChatsParams = {}): Promise<ChatsResponse> {
   const userId = await resolveUserId();
   const headers = await authHeaders();
-
   const qs = new URLSearchParams();
   if (params.unread_only != null) qs.set('unread_only', String(params.unread_only));
   if (params.item_ids) qs.set('item_ids', params.item_ids);
   qs.set('limit', String(params.limit ?? 50));
   qs.set('offset', String(params.offset ?? 0));
-
-  return fetchJson<ChatsResponse>(
-    `${BASE}/messenger/v2/accounts/${userId}/chats?${qs}`,
-    { headers },
-  );
+  return fetchJson<ChatsResponse>(`${BASE}/messenger/v2/accounts/${userId}/chats?${qs}`, { headers });
 }
 
-/** Get messages from a specific chat. */
 export async function getChatMessages(
   chatId: string,
   { limit = 50, offset = 0 }: GetMessagesParams = {},
@@ -172,41 +154,31 @@ export async function getChatMessages(
   );
 }
 
-/** Send a text message to a chat. */
 export async function sendMessage(chatId: string, text: string): Promise<unknown> {
   const userId = await resolveUserId();
   const headers = await authHeaders();
-  return fetchJson<unknown>(
-    `${BASE}/messenger/v1/accounts/${userId}/chats/${chatId}/messages`,
-    {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({ message: { text }, type: 'text' }),
-    },
-  );
+  return fetchJson<unknown>(`${BASE}/messenger/v1/accounts/${userId}/chats/${chatId}/messages`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ message: { text }, type: 'text' }),
+  });
 }
 
-/** Mark a chat as read. */
 export async function markChatRead(chatId: string): Promise<unknown> {
   const userId = await resolveUserId();
   const headers = await authHeaders();
-  return fetchJson<unknown>(
-    `${BASE}/messenger/v1/accounts/${userId}/chats/${chatId}/read`,
-    { method: 'POST', headers },
-  );
+  return fetchJson<unknown>(`${BASE}/messenger/v1/accounts/${userId}/chats/${chatId}/read`, {
+    method: 'POST',
+    headers,
+  });
 }
 
-/** Get full chat info (including users and context). */
 export async function getChatById(chatId: string): Promise<AvitoChat> {
   const userId = await resolveUserId();
   const headers = await authHeaders();
-  return fetchJson<AvitoChat>(
-    `${BASE}/messenger/v2/accounts/${userId}/chats/${chatId}`,
-    { headers },
-  );
+  return fetchJson<AvitoChat>(`${BASE}/messenger/v2/accounts/${userId}/chats/${chatId}`, { headers });
 }
 
-/** Subscribe to webhook notifications. */
 export async function subscribeWebhook(webhookUrl: string): Promise<unknown> {
   const headers = await authHeaders();
   return fetchJson<unknown>(`${BASE}/messenger/v3/webhook`, {

@@ -1,19 +1,18 @@
-import { config } from './config.js';
-import { logger } from './logger.js';
+import { allowlistActive, isSenderAllowlisted } from '../../core/allowlist.js';
+import { config } from '../../core/config.js';
+import { logger } from '../../core/logger.js';
 import {
   getChats,
   getChatMessages,
   sendMessage,
   markChatRead,
   resolveUserId,
-} from './avito-client.js';
-import { processMessage } from './pattern-handler.js';
+} from '../../integrations/avito/client.js';
+import { formatAllowlistRejectLog } from '../../integrations/avito/peer-label.js';
+import { processMessage } from './router.js';
 
 const repliedMessages = new Set<string>();
 const MAX_CACHE = 10_000;
-
-// Unix timestamp (seconds) of the moment the bot started.
-// Messages created before this moment are always ignored.
 const BOT_START_TS = Math.floor(Date.now() / 1000);
 
 function trimCache(): void {
@@ -29,7 +28,6 @@ function trimCache(): void {
 
 async function pollOnce(): Promise<void> {
   const userId = await resolveUserId();
-
   let data;
   try {
     data = await getChats({ unread_only: true });
@@ -40,12 +38,10 @@ async function pollOnce(): Promise<void> {
 
   const chats = data.chats ?? data.result?.chats ?? [];
   if (chats.length === 0) return;
-
   logger.info('Found %d unread chat(s)', chats.length);
 
   for (const chat of chats) {
     const chatId = chat.id;
-
     let messages;
     try {
       const msgData = await getChatMessages(chatId, { limit: 20 });
@@ -67,8 +63,17 @@ async function pollOnce(): Promise<void> {
       const text = msg.content?.text ?? '';
       if (!text || text.startsWith('[Системное сообщение]')) continue;
 
-      logger.info({ chatId, msgId: msg.id, text }, '← incoming');
+      if (!isSenderAllowlisted(msg.chat_id, msg.author_id)) {
+        if (allowlistActive()) {
+          logger.warn(
+            formatAllowlistRejectLog(chat, msg.author_id, msg.chat_id),
+          );
+        }
+        repliedMessages.add(msg.id);
+        continue;
+      }
 
+      logger.info({ chatId, msgId: msg.id, text }, '← incoming');
       const reply = await processMessage(text, msg, chat);
       if (!reply) {
         logger.debug({ chatId, msgId: msg.id }, 'No handler matched, skipping');
@@ -82,14 +87,13 @@ async function pollOnce(): Promise<void> {
       } catch (err) {
         logger.error({ err, chatId }, 'Failed to send reply');
       }
-
       repliedMessages.add(msg.id);
     }
 
     try {
       await markChatRead(chatId);
     } catch {
-      /* non-critical */
+      // non-critical
     }
   }
 
@@ -99,9 +103,7 @@ async function pollOnce(): Promise<void> {
 export function startPolling(): () => void {
   const intervalMs = config.pollIntervalSec * 1000;
   logger.info('Polling started (every %d s)', config.pollIntervalSec);
-
   void pollOnce();
   const timer = setInterval(() => void pollOnce(), intervalMs);
-
   return () => clearInterval(timer);
 }

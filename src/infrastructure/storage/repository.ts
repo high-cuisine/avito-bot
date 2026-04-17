@@ -6,8 +6,6 @@ const DB_PATH = process.env.DB_PATH || path.resolve(process.cwd(), 'data.db');
 const db = new Database(DB_PATH, { create: true });
 db.exec('PRAGMA journal_mode = WAL');
 
-// ─── Schema ───────────────────────────────────────────────────────────────────
-
 db.exec(`
   CREATE TABLE IF NOT EXISTS sessions (
     chat_id    TEXT PRIMARY KEY,
@@ -29,14 +27,23 @@ db.exec(`
   );
 `);
 
-// Backward-compatible migration for already existing DB files.
 try {
   db.exec('ALTER TABLE clients ADD COLUMN phone TEXT');
 } catch {
   // column already exists
 }
 
-// ─── Session types ────────────────────────────────────────────────────────────
+export type LlmToolCall = {
+  id: string;
+  type: 'function';
+  function: { name: string; arguments: string };
+};
+
+/** История для OpenAI: user/assistant текст и цепочки tool. */
+export type LlmChatMessage =
+  | { role: 'user'; content: string }
+  | { role: 'assistant'; content: string; tool_calls?: LlmToolCall[] }
+  | { role: 'tool'; tool_call_id: string; content: string };
 
 export interface SessionData {
   itemId: string;
@@ -45,6 +52,10 @@ export interface SessionData {
   route: string;
   paymentMethod: string;
   phone: string;
+  /** История диалога с моделью (без system) */
+  llmMessages?: LlmChatMessage[];
+  /** survey — полная анкета; phone_backfill — в БД уже есть заявка, не хватает телефона */
+  chatMode?: 'survey' | 'phone_backfill';
 }
 
 export interface Session {
@@ -52,8 +63,6 @@ export interface Session {
   state: string;
   data: SessionData;
 }
-
-// ─── Session CRUD ─────────────────────────────────────────────────────────────
 
 const stmtGetSession = db.prepare(
   'SELECT chat_id, state, data FROM sessions WHERE chat_id = ?',
@@ -89,8 +98,6 @@ export function deleteSession(chatId: string): void {
   stmtDeleteSession.run(chatId);
 }
 
-// ─── Client record ────────────────────────────────────────────────────────────
-
 export interface ClientRecord {
   id: number;
   chatId: string;
@@ -118,16 +125,13 @@ const stmtInsertClient = db.prepare(`
 const stmtGetClients = db.prepare(
   'SELECT id, chat_id, item_id, client_name, cargo, route, payment_method, phone, created_at FROM clients ORDER BY id DESC',
 );
-
 const stmtGetClientById = db.prepare(
   'SELECT id, chat_id, item_id, client_name, cargo, route, payment_method, phone, created_at FROM clients WHERE id = ?',
 );
-
 const stmtGetClientsSince = db.prepare(
   `SELECT id, chat_id, item_id, client_name, cargo, route, payment_method, phone, created_at
    FROM clients WHERE created_at >= ? ORDER BY id ASC`,
 );
-
 const stmtDeleteClient = db.prepare('DELETE FROM clients WHERE id = ?');
 const stmtGetClientByChatId = db.prepare(
   'SELECT id, chat_id, item_id, client_name, cargo, route, payment_method, phone, created_at FROM clients WHERE chat_id = ?',

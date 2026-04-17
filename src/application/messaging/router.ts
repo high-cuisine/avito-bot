@@ -1,4 +1,4 @@
-import type { AvitoMessage, AvitoChat } from './avito-client.js';
+import type { AvitoMessage, AvitoChat } from '../../integrations/avito/client.js';
 
 export interface MessageHandler {
   match: (text: string, msg: AvitoMessage, chat?: AvitoChat) => boolean | Promise<boolean>;
@@ -11,10 +11,6 @@ export function addHandler(handler: MessageHandler): void {
   handlers.push(handler);
 }
 
-/**
- * Run incoming text through all registered handlers.
- * Returns the reply string from the first matching handler, or null.
- */
 export async function processMessage(
   text: string,
   message: AvitoMessage,
@@ -22,16 +18,11 @@ export async function processMessage(
 ): Promise<string | null> {
   for (const handler of handlers) {
     const matched = await handler.match(text, message, chat);
-    if (matched) {
-      return handler.reply(text, message, chat);
-    }
+    if (matched) return handler.reply(text, message, chat);
   }
   return null;
 }
 
-/**
- * Convenience: register a simple regex -> static/template reply.
- */
 export function addRegexHandler(
   regex: RegExp,
   replyTemplate: string | ((match: RegExpMatchArray | null) => string),

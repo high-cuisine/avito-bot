@@ -6,7 +6,8 @@
     "start": "bun run src/index.ts",
     "dev": "bun --watch src/index.ts",
     "test:chats": "bun run src/test-chats.ts",
-    "backfill:phone": "bun run src/backfill-phone.ts"
+    "backfill:phone": "bun run src/backfill-phone.ts",
+    "backfill:phone-from-history": "bun run src/backfill-phone-from-history.ts"
   },
   "dependencies": {
     "dotenv": "^16.4.7",

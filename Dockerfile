@@ -7,6 +7,7 @@ RUN bun install --frozen-lockfile 2>/dev/null || bun install
 
 COPY tsconfig.json ./
 COPY src/ src/
+COPY knowledge/ knowledge/
 
 RUN mkdir -p /app/data
 

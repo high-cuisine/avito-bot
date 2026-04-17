@@ -1,13 +1,16 @@
 import express, { Request, Response } from 'express';
-import { config } from './config.js';
-import { logger } from './logger.js';
+import { allowlistActive, isSenderAllowlisted } from '../../core/allowlist.js';
+import { config } from '../../core/config.js';
+import { logger } from '../../core/logger.js';
 import {
   sendMessage,
   resolveUserId,
   subscribeWebhook,
+  getChatById,
   type AvitoMessage,
-} from './avito-client.js';
-import { processMessage } from './pattern-handler.js';
+} from '../../integrations/avito/client.js';
+import { formatAllowlistRejectLog } from '../../integrations/avito/peer-label.js';
+import { processMessage } from '../../application/messaging/router.js';
 
 interface WebhookPayload {
   value?: AvitoMessage & { chat_id: string };
@@ -35,6 +38,20 @@ export async function startWebhookServer(): Promise<void> {
     const chatId = payload.chat_id;
     const text = payload.content?.text ?? '';
     if (!text) return;
+
+    if (!isSenderAllowlisted(chatId, authorId)) {
+      if (allowlistActive()) {
+        let line = formatAllowlistRejectLog(undefined, authorId, chatId);
+        try {
+          const ch = await getChatById(chatId);
+          line = formatAllowlistRejectLog(ch, authorId, chatId);
+        } catch {
+          // оставляем строку без имени
+        }
+        logger.warn(line);
+      }
+      return;
+    }
 
     logger.info({ chatId, authorId, text }, '← webhook message');
 

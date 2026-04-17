@@ -1,11 +1,11 @@
-import { validateConfig } from './config.js';
-import { logger } from './logger.js';
+import { validateConfig } from './core/config.js';
+import { logger } from './core/logger.js';
 import {
   getAccessToken,
   resolveUserId,
   getChats,
   getChatMessages,
-} from './avito-client.js';
+} from './integrations/avito/client.js';
 
 async function main(): Promise<void> {
   validateConfig();
@@ -48,8 +48,11 @@ async function main(): Promise<void> {
     const time = m.created
       ? new Date(m.created * 1000).toLocaleString('ru')
       : '?';
-    console.log('  [%s] %s: %s', time, author, text);
+    console.log('  [%s] %s author_id=%s: %s', time, author, m.author_id, text);
   }
+  console.log(
+    '\n(Для ALLOWLIST_USER_IDS возьмите author_id у сообщений THEM — это id собеседника в мессенджере.)\n',
+  );
 
   if (messages.length === 0) {
     console.log('  (no messages)');

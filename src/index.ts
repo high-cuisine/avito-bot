@@ -1,19 +1,29 @@
-import { config, validateConfig } from './config.js';
-import { logger } from './logger.js';
-import { getAccessToken, resolveUserId } from './avito-client.js';
+import { config, validateConfig, validateOpenAiConfig } from './core/config.js';
+import { allowlistActive } from './core/allowlist.js';
+import { loadKnowledgeFromDisk } from './core/knowledge.js';
+import { logger } from './core/logger.js';
+import { getAccessToken, resolveUserId } from './integrations/avito/client.js';
 
 // Side-effect: registers all message handlers
-import './handlers.js';
+import './application/messaging/handlers.js';
 
-import { startPolling } from './poller.js';
-import { startWebhookServer } from './webhook-server.js';
-import { startApiServer } from './api-server.js';
+import { startPolling } from './application/messaging/poller.js';
+import { startWebhookServer } from './interfaces/http/webhook-server.js';
+import { startApiServer } from './interfaces/http/api-server.js';
 
 async function main(): Promise<void> {
   validateConfig();
+  validateOpenAiConfig();
+  loadKnowledgeFromDisk();
 
   logger.info('=== Avito Messenger Bot ===');
   logger.info('Mode: %s', config.mode);
+  if (allowlistActive()) {
+    logger.info(
+      { chats: config.allowlistChatIds.length, users: config.allowlistUserIds.length },
+      'Allowlist ON: only matching chat_id / user_id get replies; others silently ignored',
+    );
+  }
 
   await getAccessToken();
   const userId = await resolveUserId();
