@@ -68,8 +68,13 @@ export interface SessionData {
   phone: string;
   /** История диалога с моделью (без system) */
   llmMessages?: LlmChatMessage[];
-  /** survey — полная анкета; phone_backfill — в БД уже есть заявка, не хватает телефона */
-  chatMode?: 'survey' | 'phone_backfill';
+  /**
+   * phone_intent — сначала согласие на телефон;
+   * survey — полная заявка с телефоном;
+   * survey_estimate_only — только расчёт по параметрам без телефона;
+   * phone_backfill — в БД уже есть заявка, не хватает телефона.
+   */
+  chatMode?: 'phone_intent' | 'survey' | 'survey_estimate_only' | 'phone_backfill';
 }
 
 export interface Session {

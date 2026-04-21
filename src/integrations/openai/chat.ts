@@ -1,15 +1,20 @@
 import { config } from '../../core/config.js';
 import { getKnowledgeBundle } from '../../core/knowledge.js';
 import { logger } from '../../core/logger.js';
-import type { LlmChatMessage, LlmToolCall } from '../../infrastructure/storage/repository.js';
+import type {
+  LlmChatMessage,
+  LlmToolCall,
+  SessionData,
+} from '../../infrastructure/storage/repository.js';
 import {
+  executeDeclarePhoneContactPath,
   executeSubmitChatEstimateRequest,
   executeSubmitPhoneBackfill,
   executeSubmitTransportLead,
 } from '../../application/conversation/execute-submit.js';
 
 export interface LlmContext {
-  chatMode: 'survey' | 'phone_backfill';
+  chatMode: NonNullable<SessionData['chatMode']>;
   chatId: string;
   clientName: string;
   itemId: string;
@@ -30,6 +35,7 @@ export interface LlmTurnResult {
 const TOOL_TRANSPORT = 'submit_transport_lead';
 const TOOL_PHONE = 'submit_phone_backfill';
 const TOOL_CHAT_ESTIMATE = 'submit_chat_estimate_request';
+const TOOL_DECLARE_PHONE_PATH = 'declare_phone_contact_path';
 
 const MAX_STORED_MESSAGES = 40;
 
@@ -61,7 +67,7 @@ function chatEstimateTool() {
     function: {
       name: TOOL_CHAT_ESTIMATE,
       description:
-        'Вызови один раз, когда клиент отказывается давать телефон, но согласен оставить данные для расчёта стоимости в чате: после сводки и явного подтверждения. Не создаёт полную заявку с телефоном — только параметры для расчёта.',
+        'В режиме «расчёт без телефона»: один раз после сводки и явного подтверждения клиента. Сохраняет параметры для расчёта в чате, без полной заявки с телефоном.',
       parameters: {
         type: 'object',
         properties: {
@@ -76,6 +82,28 @@ function chatEstimateTool() {
           },
         },
         required: ['cargo', 'route', 'payment_method'],
+      },
+    },
+  };
+}
+
+function phoneIntentTool() {
+  return {
+    type: 'function' as const,
+    function: {
+      name: TOOL_DECLARE_PHONE_PATH,
+      description:
+        'Вызови один раз, когда выбор клиента ясен: готов сообщить телефон для перезвона менеджера (true) или не готов и выбирает расчёт по параметрам в чате без телефона на входе (false). До этого только текст.',
+      parameters: {
+        type: 'object',
+        properties: {
+          willing_to_share_phone: {
+            type: 'boolean',
+            description:
+              'true — стандартная заявка с телефоном; false — второй сценарий (только параметры для расчёта в чате)',
+          },
+        },
+        required: ['willing_to_share_phone'],
       },
     },
   };
@@ -115,21 +143,57 @@ function buildTechnicalInstructions(ctx: LlmContext): string {
     ].join('\n');
   }
 
+  if (ctx.chatMode === 'phone_intent') {
+    return [
+      `Ты ассистент в мессенджере Авито. Клиент: «${name}».`,
+      item,
+      'Веди диалог по базе знаний (Анна, грузоперевозки). **Первый шаг:** после приветствия **сразу** выясни, готов ли клиент оставить **номер телефона**, чтобы менеджер перезвонил с расчётом и согласованием.',
+      'Если клиент **согласен** дать телефон в переписке — после явного согласия вызови **' +
+        TOOL_DECLARE_PHONE_PATH +
+        '** с `willing_to_share_phone: true`.',
+      'Если **не согласен** на телефон — не дави; предложи **альтернативу**: оставить параметры перевозки для **расчёта в чате** без обязательного телефона на этом этапе. Когда клиент явно выбирает этот вариант — вызови **' +
+        TOOL_DECLARE_PHONE_PATH +
+        '** с `willing_to_share_phone: false`.',
+      'Пока выбор неясен — только текст, без инструментов.',
+      'Общайся только по-русски.',
+    ].join('\n');
+  }
+
+  if (ctx.chatMode === 'survey_estimate_only') {
+    return [
+      `Ты ассистент в мессенджере Авито. Клиент: «${name}».`,
+      item,
+      'Клиент **не** оставляет телефон на входе; ведёшь **второй сценарий**: расчёт по параметрам в чате.',
+      'Собери маршрут, груз и вес по возможности, форму оплаты, все уточнения в поле **details** (габариты, даты и т.д.); сводка и явное подтверждение.',
+      `После подтверждения вызови **${TOOL_CHAT_ESTIMATE}** один раз. Телефон в этом режиме **не** собирай для заявки.`,
+      'До подтверждённой сводки — только текст. Общайся только по-русски.',
+    ].join('\n');
+  }
+
+  // survey — стандартная заявка с телефоном
   return [
     `Ты ассистент в мессенджере Авито. Клиент: «${name}».`,
     item,
-    'Веди диалог по скрипту из базы знаний (Анна, грузоперевозки, сбор данных для расчёта, без вопроса «новый или действующий заказ»).',
-    'Обычный путь: собери характер груза и по возможности вес, маршрут, форму оплаты, телефон; сводка и явное подтверждение — затем инструмент **' +
-      TOOL_TRANSPORT +
-      '** (телефон в аргументах строго +7 и 10 цифр после).',
-    'Если клиент **категорически не даёт телефон**, но готов оставить параметры для расчёта без звонка — собери маршрут, груз/вес, оплату и все уточнения в поле **details** инструмента **' +
-      TOOL_CHAT_ESTIMATE +
-      '** после сводки и явного подтверждения. Этот путь **без** телефона; **не** вызывай **' +
-      TOOL_TRANSPORT +
-      '** без номера.',
-    'Выбери **ровно один** подходящий инструмент после подтверждения сводки; до этого отвечай только текстом (не вызывай инструменты раньше времени).',
+    'Клиент уже согласился дать телефон; веди **стандартный** сбор по базе знаний: груз и вес по возможности, маршрут, оплата, телефон; сводка и явное подтверждение.',
+    `После подтверждения сводки вызови **${TOOL_TRANSPORT}** с полями (телефон строго +7 и 10 цифр после).`,
+    'До подтверждённой сводки — только текст. Другие инструменты в этом режиме недоступны.',
     'Общайся только по-русски.',
   ].join('\n');
+}
+
+function toolsForMode(chatMode: LlmContext['chatMode']) {
+  switch (chatMode) {
+    case 'phone_backfill':
+      return [phoneTool()];
+    case 'phone_intent':
+      return [phoneIntentTool()];
+    case 'survey':
+      return [transportTool()];
+    case 'survey_estimate_only':
+      return [chatEstimateTool()];
+    default:
+      return [phoneIntentTool()];
+  }
 }
 
 function buildSystemPrompt(ctx: LlmContext): string {
@@ -211,10 +275,7 @@ export async function runLlmTurn(
 ): Promise<LlmTurnResult | null> {
   const system = buildSystemPrompt(ctx);
   const trimmedHistory = trimHistory(history);
-  const tools =
-    ctx.chatMode === 'phone_backfill'
-      ? [phoneTool()]
-      : [transportTool(), chatEstimateTool()];
+  const tools = toolsForMode(ctx.chatMode);
 
   const baseMessages: ApiMsg[] = [
     { role: 'system', content: system },
@@ -266,7 +327,10 @@ export async function runLlmTurn(
     }
 
     let toolContent: string;
-    if (name === TOOL_TRANSPORT && ctx.chatMode === 'survey') {
+    if (name === TOOL_DECLARE_PHONE_PATH && ctx.chatMode === 'phone_intent') {
+      const exec = await executeDeclarePhoneContactPath(ctx.chatId, args);
+      toolContent = exec.toolContent;
+    } else if (name === TOOL_TRANSPORT && ctx.chatMode === 'survey') {
       const exec = await executeSubmitTransportLead(
         ctx.chatId,
         { itemId: ctx.itemId, clientName: ctx.clientName },
@@ -274,7 +338,7 @@ export async function runLlmTurn(
       );
       toolContent = exec.toolContent;
       if (exec.persisted && exec.ok) sessionEnded = true;
-    } else if (name === TOOL_CHAT_ESTIMATE && ctx.chatMode === 'survey') {
+    } else if (name === TOOL_CHAT_ESTIMATE && ctx.chatMode === 'survey_estimate_only') {
       const exec = await executeSubmitChatEstimateRequest(
         ctx.chatId,
         { itemId: ctx.itemId, clientName: ctx.clientName },

@@ -1,5 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { clearDatabaseForTests, saveClient } from '../../infrastructure/storage/repository.js';
+import {
+  clearDatabaseForTests,
+  getSession,
+  saveClient,
+  saveSession,
+} from '../../infrastructure/storage/repository.js';
 
 vi.mock('../../integrations/webhook/submit-lead.js', () => ({
   postSubmitWebhook: vi.fn().mockResolvedValue(true),
@@ -83,6 +88,46 @@ describe('execute-submit', () => {
   it('executeSubmitPhoneBackfill fails when no row', async () => {
     const { executeSubmitPhoneBackfill } = await import('./execute-submit.js');
     const r = await executeSubmitPhoneBackfill('missing', { phone: '+79001112233' });
+    expect(r.ok).toBe(false);
+  });
+
+  it('executeDeclarePhoneContactPath sets survey', async () => {
+    saveSession('c-path', 'LLM', {
+      itemId: '',
+      clientName: 'Тест',
+      cargo: '',
+      route: '',
+      paymentMethod: '',
+      phone: '',
+      chatMode: 'phone_intent',
+      llmMessages: [],
+    });
+    const { executeDeclarePhoneContactPath } = await import('./execute-submit.js');
+    const r = await executeDeclarePhoneContactPath('c-path', { willing_to_share_phone: true });
+    expect(r.ok).toBe(true);
+    expect(getSession('c-path')?.data.chatMode).toBe('survey');
+  });
+
+  it('executeDeclarePhoneContactPath sets survey_estimate_only', async () => {
+    saveSession('c-path2', 'LLM', {
+      itemId: '',
+      clientName: '',
+      cargo: '',
+      route: '',
+      paymentMethod: '',
+      phone: '',
+      chatMode: 'phone_intent',
+      llmMessages: [],
+    });
+    const { executeDeclarePhoneContactPath } = await import('./execute-submit.js');
+    const r = await executeDeclarePhoneContactPath('c-path2', { willing_to_share_phone: false });
+    expect(r.ok).toBe(true);
+    expect(getSession('c-path2')?.data.chatMode).toBe('survey_estimate_only');
+  });
+
+  it('executeDeclarePhoneContactPath rejects missing session', async () => {
+    const { executeDeclarePhoneContactPath } = await import('./execute-submit.js');
+    const r = await executeDeclarePhoneContactPath('no-session', { willing_to_share_phone: true });
     expect(r.ok).toBe(false);
   });
 });

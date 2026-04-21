@@ -2,7 +2,9 @@ import { normalizePhone } from '../../core/phone.js';
 import { logger } from '../../core/logger.js';
 import { postSubmitWebhook } from '../../integrations/webhook/submit-lead.js';
 import {
+  getSession,
   saveClient,
+  saveSession,
   updateClientPhoneByChatId,
   upsertChatEstimateRequest,
   type SessionData,
@@ -18,6 +20,48 @@ export interface ToolExecResult {
 
 function toolJson(ok: boolean, message: string, extra?: Record<string, unknown>): string {
   return JSON.stringify({ ok, message, ...extra });
+}
+
+export async function executeDeclarePhoneContactPath(
+  chatId: string,
+  rawArgs: unknown,
+): Promise<ToolExecResult> {
+  if (!rawArgs || typeof rawArgs !== 'object') {
+    return { ok: false, toolContent: toolJson(false, 'Некорректные аргументы'), persisted: false };
+  }
+  const a = rawArgs as Record<string, unknown>;
+  const v = a.willing_to_share_phone ?? a.willingToSharePhone;
+  if (typeof v !== 'boolean') {
+    return {
+      ok: false,
+      toolContent: toolJson(false, 'Нужен boolean willing_to_share_phone'),
+      persisted: false,
+    };
+  }
+
+  const session = getSession(chatId);
+  if (!session) {
+    return {
+      ok: false,
+      toolContent: toolJson(false, 'Сессия не найдена'),
+      persisted: false,
+    };
+  }
+
+  const nextMode: SessionData['chatMode'] = v ? 'survey' : 'survey_estimate_only';
+  const data: SessionData = { ...session.data, chatMode: nextMode };
+  saveSession(chatId, session.state, data);
+
+  const hint = v
+    ? 'Дальше стандартный опрос: груз, маршрут, оплата, телефон; затем submit_transport_lead.'
+    : 'Дальше сценарий без телефона: груз, маршрут, оплата, уточнения в details; затем submit_chat_estimate_request.';
+
+  logger.info({ chatId, nextMode }, 'Contact path chosen after phone intent');
+  return {
+    ok: true,
+    toolContent: toolJson(true, hint, { next_mode: nextMode }),
+    persisted: true,
+  };
 }
 
 export async function executeSubmitTransportLead(

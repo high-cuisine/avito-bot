@@ -107,7 +107,7 @@ export async function handleConversation(
         ...emptyData(),
         clientName,
         itemId,
-        chatMode: 'survey',
+        chatMode: 'phone_intent',
         llmMessages: [],
       };
       saveSession(chatId, LLM_STATE, data);
@@ -121,7 +121,7 @@ export async function handleConversation(
   }
 
   const { data } = session;
-  const mode = data.chatMode ?? 'survey';
+  const mode = data.chatMode ?? 'phone_intent';
   const history: LlmChatMessage[] = data.llmMessages ?? [];
 
   const result = await runLlmTurn(text, history, {
