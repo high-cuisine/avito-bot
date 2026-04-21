@@ -21,8 +21,6 @@ export interface LlmContext {
   knownCargo?: string;
   knownRoute?: string;
   knownPayment?: string;
-  /** Первый ответ в режиме phone_intent (в истории ещё нет реплик ассистента). */
-  phoneIntentOpening?: boolean;
 }
 
 export interface LlmTurnResult {
@@ -146,18 +144,11 @@ function buildTechnicalInstructions(ctx: LlmContext): string {
   }
 
   if (ctx.chatMode === 'phone_intent') {
-    const openingBlock =
-      ctx.phoneIntentOpening === true
-        ? [
-            'Это **первый** твой ответ в чате. В **одном** сообщении: короткое приветствие (Анна, грузоперевозки) **и сразу** просьба **назвать номер телефона** (+7… или 8…), чтобы менеджер перезвонил с расчётом.',
-            '**Запрещено** заканчивать ответ общими фразами вроде «как я могу помочь», «чем могу помочь», «что вас интересует» **без** явной просьбы указать телефон.',
-          ].join('\n')
-        : 'Диалог уже начат: уточняй выбор (телефон для перезвона **или** отказ и расчёт по параметрам в чате), без общих «чем помочь» вместо сути.';
-
     return [
       `Ты ассистент в мессенджере Авито. Клиент: «${name}».`,
       item,
-      openingBlock,
+      'Первое сообщение клиенту с приветствием и просьбой телефона **уже отправлено автоматически** (не дублируй его целиком). Дальше веди диалог по ответу клиента.',
+      'Уточняй выбор: готов **назвать телефон** для перезвона менеджера **или** **отказывается** — тогда предложи расчёт по параметрам в чате без телефона на входе. Без пустых «чем могу помочь» вместо сути.',
       'Если клиент **согласен** дать телефон в чате (или прислал номер) — после явного согласия вызови **' +
         TOOL_DECLARE_PHONE_PATH +
         '** с `willing_to_share_phone: true`.',
@@ -310,7 +301,12 @@ export async function runLlmTurn(
   const newHistoryEntries: LlmChatMessage[] = [];
 
   if (!toolCalls || toolCalls.length === 0) {
-    const text = (msg1.content ?? '').trim() || 'Напишите, пожалуйста, что вас интересует.';
+    const raw = (msg1.content ?? '').trim();
+    const text =
+      raw ||
+      (ctx.chatMode === 'phone_intent'
+        ? 'Напишите номер +7… или 8… для перезвона менеджера. Если номер указать не готовы — напишите об этом.'
+        : 'Напишите, пожалуйста, что вас интересует.');
     newHistoryEntries.push({ role: 'assistant', content: text });
     return { reply: text, newHistoryEntries, sessionEnded: false };
   }

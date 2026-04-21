@@ -17,6 +17,10 @@ import {
 const LLM_STATE = 'LLM';
 const MAX_LLM_HISTORY = 40;
 
+/** Первый ответ в режиме phone_intent — только из кода, без LLM (жёсткая просьба телефона). */
+const PHONE_INTENT_OPENING_REPLY =
+  'Да, добрый день! Грузоперевозки, меня зовут Анна. Напишите, пожалуйста, ваш номер телефона в формате +7… или 8…, чтобы менеджер перезвонил с расчётом стоимости перевозки.';
+
 const LEGACY_STATES = new Set([
   'ASK_CARGO',
   'ASK_ROUTE',
@@ -124,8 +128,11 @@ export async function handleConversation(
   const mode = data.chatMode ?? 'phone_intent';
   const history: LlmChatMessage[] = data.llmMessages ?? [];
 
-  const phoneIntentOpening =
-    mode === 'phone_intent' && !history.some((m) => m.role === 'assistant');
+  if (mode === 'phone_intent' && !history.some((m) => m.role === 'assistant')) {
+    appendTurn(data, text, [{ role: 'assistant', content: PHONE_INTENT_OPENING_REPLY }]);
+    saveSession(chatId, LLM_STATE, data);
+    return PHONE_INTENT_OPENING_REPLY;
+  }
 
   const result = await runLlmTurn(text, history, {
     chatMode: mode,
@@ -135,7 +142,6 @@ export async function handleConversation(
     knownCargo: data.cargo || undefined,
     knownRoute: data.route || undefined,
     knownPayment: data.paymentMethod || undefined,
-    phoneIntentOpening,
   });
 
   if (!result) {
