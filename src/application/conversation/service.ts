@@ -124,6 +124,9 @@ export async function handleConversation(
   const mode = data.chatMode ?? 'phone_intent';
   const history: LlmChatMessage[] = data.llmMessages ?? [];
 
+  const phoneIntentOpening =
+    mode === 'phone_intent' && !history.some((m) => m.role === 'assistant');
+
   const result = await runLlmTurn(text, history, {
     chatMode: mode,
     chatId,
@@ -132,6 +135,7 @@ export async function handleConversation(
     knownCargo: data.cargo || undefined,
     knownRoute: data.route || undefined,
     knownPayment: data.paymentMethod || undefined,
+    phoneIntentOpening,
   });
 
   if (!result) {
