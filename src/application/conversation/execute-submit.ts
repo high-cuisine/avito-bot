@@ -53,7 +53,7 @@ export async function executeDeclarePhoneContactPath(
   saveSession(chatId, session.state, data);
 
   const hint = v
-    ? 'Дальше стандартный опрос: груз, маршрут, оплата, телефон; затем submit_transport_lead.'
+    ? 'Дальше соберите груз, маршрут, оплату и сводку. Если номер уже прислали ранее — он в заявке; при submit_transport_lead телефон подставится из сохранённого.'
     : 'Дальше сценарий без телефона: груз, маршрут, оплата, уточнения в details; затем submit_chat_estimate_request.';
 
   logger.info({ chatId, nextMode }, 'Contact path chosen after phone intent');
@@ -79,7 +79,12 @@ export async function executeSubmitTransportLead(
   const phoneRaw = String(a.phone ?? '').trim();
   const client_name = String(a.client_name ?? a.clientName ?? sessionDefaults.clientName ?? '').trim();
 
-  const phone = normalizePhone(phoneRaw);
+  let phone = normalizePhone(phoneRaw);
+  if (!phone) {
+    const sess = getSession(chatId);
+    const fromSession = sess?.data.capturedPhone?.trim() || sess?.data.phone?.trim();
+    if (fromSession) phone = normalizePhone(fromSession);
+  }
   if (!cargo || !route || !payment_method || !phone) {
     return {
       ok: false,

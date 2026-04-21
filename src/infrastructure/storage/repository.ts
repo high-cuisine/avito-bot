@@ -66,6 +66,8 @@ export interface SessionData {
   route: string;
   paymentMethod: string;
   phone: string;
+  /** Телефон уже сохранён в clients до полного опроса (первый сценарий). */
+  capturedPhone?: string;
   /** История диалога с моделью (без system) */
   llmMessages?: LlmChatMessage[];
   /**

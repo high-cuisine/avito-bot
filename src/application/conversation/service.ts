@@ -1,3 +1,4 @@
+import { normalizePhone } from '../../core/phone.js';
 import { logger } from '../../core/logger.js';
 import {
   resolveUserId,
@@ -5,9 +6,11 @@ import {
   type AvitoChat,
 } from '../../integrations/avito/client.js';
 import { runLlmTurn } from '../../integrations/openai/chat.js';
+import { postSubmitWebhook } from '../../integrations/webhook/submit-lead.js';
 import {
   getSession,
   saveSession,
+  saveClient,
   deleteSession,
   getClientByChatId,
   type SessionData,
@@ -20,6 +23,9 @@ const MAX_LLM_HISTORY = 40;
 /** Первый ответ в режиме phone_intent — только из кода, без LLM (жёсткая просьба телефона). */
 const PHONE_INTENT_OPENING_REPLY =
   'Да, добрый день! Грузоперевозки, меня зовут Анна. Напишите, пожалуйста, ваш номер телефона в формате +7… или 8…, чтобы менеджер перезвонил с расчётом стоимости перевозки.';
+
+const THANKS_PHONE_DONE =
+  'Спасибо! Номер записали — менеджер перезвонит вам для расчёта и согласования. Дополнительно в чате ничего указывать не нужно.';
 
 const LEGACY_STATES = new Set([
   'ASK_CARGO',
@@ -39,6 +45,7 @@ function emptyData(): SessionData {
     route: '',
     paymentMethod: '',
     phone: '',
+    capturedPhone: undefined,
     llmMessages: [],
   };
 }
@@ -134,6 +141,43 @@ export async function handleConversation(
     return PHONE_INTENT_OPENING_REPLY;
   }
 
+  if (mode === 'phone_intent' && history.some((m) => m.role === 'assistant')) {
+    const earlyPhone = normalizePhone(text);
+    if (earlyPhone) {
+      saveClient({
+        chatId,
+        itemId: data.itemId || '',
+        clientName: data.clientName || '',
+        cargo: '',
+        route: '',
+        paymentMethod: '',
+        phone: earlyPhone,
+      });
+      const whOk = await postSubmitWebhook({
+        event: 'transport_lead',
+        chat_id: chatId,
+        item_id: data.itemId || null,
+        client_name: data.clientName || null,
+        cargo: null,
+        route: null,
+        payment_method: null,
+        phone: earlyPhone,
+        submitted_at: new Date().toISOString(),
+      });
+      if (!whOk) {
+        logger.warn({ chatId }, 'Early phone: local save OK but submit webhook failed');
+      }
+      deleteSession(chatId);
+      logger.info({ chatId, phone: earlyPhone, webhook_ok: whOk }, 'Phone-only lead completed');
+      return THANKS_PHONE_DONE;
+    }
+  }
+
+  const knownPhoneNorm =
+    data.capturedPhone?.trim() ||
+    (data.phone?.trim() ? normalizePhone(data.phone) : null) ||
+    undefined;
+
   const result = await runLlmTurn(text, history, {
     chatMode: mode,
     chatId,
@@ -142,6 +186,7 @@ export async function handleConversation(
     knownCargo: data.cargo || undefined,
     knownRoute: data.route || undefined,
     knownPayment: data.paymentMethod || undefined,
+    knownPhone: knownPhoneNorm || undefined,
   });
 
   if (!result) {

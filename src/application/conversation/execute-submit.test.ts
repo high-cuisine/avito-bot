@@ -25,6 +25,36 @@ describe('execute-submit', () => {
     expect(r.persisted).toBe(false);
   });
 
+  it('executeSubmitTransportLead uses capturedPhone when tool omits phone', async () => {
+    const { saveSession } = await import('../../infrastructure/storage/repository.js');
+    saveSession('c-cap', 'LLM', {
+      itemId: '',
+      clientName: 'Юра',
+      cargo: '',
+      route: '',
+      paymentMethod: '',
+      phone: '+79001112233',
+      capturedPhone: '+79001112233',
+      chatMode: 'survey',
+      llmMessages: [],
+    });
+    const { executeSubmitTransportLead } = await import('./execute-submit.js');
+    const r = await executeSubmitTransportLead(
+      'c-cap',
+      { itemId: '', clientName: 'Юра' },
+      {
+        cargo: 'песок',
+        route: 'А — Б',
+        payment_method: 'нал',
+        phone: '',
+      },
+    );
+    expect(r.ok).toBe(true);
+    const { getClientByChatId } = await import('../../infrastructure/storage/repository.js');
+    expect(getClientByChatId('c-cap')?.phone).toBe('+79001112233');
+    expect(getClientByChatId('c-cap')?.cargo).toBe('песок');
+  });
+
   it('executeSubmitTransportLead persists full lead', async () => {
     const { executeSubmitTransportLead } = await import('./execute-submit.js');
     const r = await executeSubmitTransportLead(
