@@ -3,11 +3,13 @@
   "version": "1.0.0",
   "description": "Avito messenger bot — listens to incoming messages, matches patterns, sends replies",
   "scripts": {
-    "start": "bun run src/index.ts",
-    "dev": "bun --watch src/index.ts",
-    "test:chats": "bun run src/test-chats.ts",
-    "backfill:phone": "bun run src/backfill-phone.ts",
-    "backfill:phone-from-history": "bun run src/backfill-phone-from-history.ts"
+    "start": "tsx src/index.ts",
+    "dev": "tsx watch src/index.ts",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:chats": "tsx src/test-chats.ts",
+    "backfill:phone": "tsx src/backfill-phone.ts",
+    "backfill:phone-from-history": "tsx src/backfill-phone-from-history.ts"
   },
   "dependencies": {
     "dotenv": "^16.4.7",
@@ -17,10 +19,16 @@
     "swagger-ui-express": "^5.0.1"
   },
   "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
     "@types/bun": "^1.2.9",
     "@types/express": "^5.0.1",
     "@types/node": "^22.14.0",
+    "@types/supertest": "^6.0.2",
     "@types/swagger-ui-express": "^4.1.8",
-    "typescript": "^5.8.3"
+    "better-sqlite3": "^11.10.0",
+    "supertest": "^7.1.0",
+    "tsx": "^4.19.3",
+    "typescript": "^5.8.3",
+    "vitest": "^3.1.4"
   }
 }

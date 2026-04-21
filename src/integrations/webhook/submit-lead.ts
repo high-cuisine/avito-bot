@@ -1,7 +1,7 @@
 import { config } from '../../core/config.js';
 import { logger } from '../../core/logger.js';
 
-export type SubmitEvent = 'transport_lead' | 'phone_backfill';
+export type SubmitEvent = 'transport_lead' | 'phone_backfill' | 'chat_estimate';
 
 export interface TransportLeadPayload {
   event: SubmitEvent;
@@ -12,6 +12,8 @@ export interface TransportLeadPayload {
   route: string | null;
   payment_method: string | null;
   phone: string | null;
+  /** Доп. параметры груза для события chat_estimate */
+  details?: string | null;
   submitted_at: string;
 }
 

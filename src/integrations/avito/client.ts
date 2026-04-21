@@ -41,7 +41,15 @@ export interface ChatUser {
 
 export interface ChatContext {
   type?: string;
-  value?: { id?: string; name?: string };
+  value?: {
+    id?: string;
+    name?: string;
+    title?: string;
+    /** Прямая ссылка на объявление, если API мессенджера её отдаёт */
+    url?: string;
+    public_url?: string;
+    link?: string;
+  };
 }
 
 export interface AvitoChat {
@@ -130,6 +138,11 @@ export async function resolveUserId(): Promise<string> {
   return config.avito.userId;
 }
 
+export async function getSelf(): Promise<AvitoUser> {
+  const headers = await authHeaders();
+  return fetchJson<AvitoUser>(`${BASE}/core/v1/accounts/self`, { headers });
+}
+
 export async function getChats(params: GetChatsParams = {}): Promise<ChatsResponse> {
   const userId = await resolveUserId();
   const headers = await authHeaders();
@@ -177,6 +190,27 @@ export async function getChatById(chatId: string): Promise<AvitoChat> {
   const userId = await resolveUserId();
   const headers = await authHeaders();
   return fetchJson<AvitoChat>(`${BASE}/messenger/v2/accounts/${userId}/chats/${chatId}`, { headers });
+}
+
+/** Ответ GET /core/v1/accounts/{user_id}/items/{item_id}/ — в т.ч. публичный URL объявления */
+export interface ItemInfoAvito {
+  status?: string;
+  url?: string;
+}
+
+/**
+ * Публичный URL объявления по item_id (для вашего аккаунта).
+ * Нужны права API на «объявления»; иначе вернётся null.
+ */
+export async function getItemInfo(userId: string, itemId: string): Promise<ItemInfoAvito | null> {
+  const headers = await authHeaders();
+  const path = `${BASE}/core/v1/accounts/${userId}/items/${encodeURIComponent(itemId)}/`;
+  try {
+    return await fetchJson<ItemInfoAvito>(path, { headers });
+  } catch (err) {
+    logger.debug({ err, userId, itemId }, 'getItemInfo: не удалось (нет прав или чужое объявление)');
+    return null;
+  }
 }
 
 export async function subscribeWebhook(webhookUrl: string): Promise<unknown> {

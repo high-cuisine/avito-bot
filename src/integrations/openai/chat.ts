@@ -3,6 +3,7 @@ import { getKnowledgeBundle } from '../../core/knowledge.js';
 import { logger } from '../../core/logger.js';
 import type { LlmChatMessage, LlmToolCall } from '../../infrastructure/storage/repository.js';
 import {
+  executeSubmitChatEstimateRequest,
   executeSubmitPhoneBackfill,
   executeSubmitTransportLead,
 } from '../../application/conversation/execute-submit.js';
@@ -28,6 +29,7 @@ export interface LlmTurnResult {
 
 const TOOL_TRANSPORT = 'submit_transport_lead';
 const TOOL_PHONE = 'submit_phone_backfill';
+const TOOL_CHAT_ESTIMATE = 'submit_chat_estimate_request';
 
 const MAX_STORED_MESSAGES = 40;
 
@@ -48,6 +50,32 @@ function transportTool() {
           client_name: { type: 'string', description: 'Имя клиента, если известно' },
         },
         required: ['cargo', 'route', 'payment_method', 'phone'],
+      },
+    },
+  };
+}
+
+function chatEstimateTool() {
+  return {
+    type: 'function' as const,
+    function: {
+      name: TOOL_CHAT_ESTIMATE,
+      description:
+        'Вызови один раз, когда клиент отказывается давать телефон, но согласен оставить данные для расчёта стоимости в чате: после сводки и явного подтверждения. Не создаёт полную заявку с телефоном — только параметры для расчёта.',
+      parameters: {
+        type: 'object',
+        properties: {
+          cargo: { type: 'string', description: 'Характер груза и при необходимости вес' },
+          route: { type: 'string', description: 'Откуда — куда' },
+          payment_method: { type: 'string', description: 'Форма оплаты' },
+          client_name: { type: 'string', description: 'Имя клиента, если известно' },
+          details: {
+            type: 'string',
+            description:
+              'Все дополнительные уточнения для расчёта: габариты, даты, особенности погрузки и т.п.',
+          },
+        },
+        required: ['cargo', 'route', 'payment_method'],
       },
     },
   };
@@ -91,10 +119,15 @@ function buildTechnicalInstructions(ctx: LlmContext): string {
     `Ты ассистент в мессенджере Авито. Клиент: «${name}».`,
     item,
     'Веди диалог по скрипту из базы знаний (Анна, грузоперевозки, сбор данных для расчёта, без вопроса «новый или действующий заказ»).',
-    'Собери: характер груза и по возможности вес, маршрут, форму оплаты, телефон; затем сводку и явное подтверждение клиента.',
-    `Только после подтверждения сводки вызови инструмент **${TOOL_TRANSPORT}** с заполненными полями — так заявка уходит на сервер компании.`,
-    'До этого отвечай только обычным текстом пользователю (не вызывай инструмент раньше времени).',
-    'Телефон в аргументах инструмента — строго +7 и 10 цифр после.',
+    'Обычный путь: собери характер груза и по возможности вес, маршрут, форму оплаты, телефон; сводка и явное подтверждение — затем инструмент **' +
+      TOOL_TRANSPORT +
+      '** (телефон в аргументах строго +7 и 10 цифр после).',
+    'Если клиент **категорически не даёт телефон**, но готов оставить параметры для расчёта без звонка — собери маршрут, груз/вес, оплату и все уточнения в поле **details** инструмента **' +
+      TOOL_CHAT_ESTIMATE +
+      '** после сводки и явного подтверждения. Этот путь **без** телефона; **не** вызывай **' +
+      TOOL_TRANSPORT +
+      '** без номера.',
+    'Выбери **ровно один** подходящий инструмент после подтверждения сводки; до этого отвечай только текстом (не вызывай инструменты раньше времени).',
     'Общайся только по-русски.',
   ].join('\n');
 }
@@ -179,7 +212,9 @@ export async function runLlmTurn(
   const system = buildSystemPrompt(ctx);
   const trimmedHistory = trimHistory(history);
   const tools =
-    ctx.chatMode === 'phone_backfill' ? [phoneTool()] : [transportTool()];
+    ctx.chatMode === 'phone_backfill'
+      ? [phoneTool()]
+      : [transportTool(), chatEstimateTool()];
 
   const baseMessages: ApiMsg[] = [
     { role: 'system', content: system },
@@ -233,6 +268,14 @@ export async function runLlmTurn(
     let toolContent: string;
     if (name === TOOL_TRANSPORT && ctx.chatMode === 'survey') {
       const exec = await executeSubmitTransportLead(
+        ctx.chatId,
+        { itemId: ctx.itemId, clientName: ctx.clientName },
+        args,
+      );
+      toolContent = exec.toolContent;
+      if (exec.persisted && exec.ok) sessionEnded = true;
+    } else if (name === TOOL_CHAT_ESTIMATE && ctx.chatMode === 'survey') {
+      const exec = await executeSubmitChatEstimateRequest(
         ctx.chatId,
         { itemId: ctx.itemId, clientName: ctx.clientName },
         args,

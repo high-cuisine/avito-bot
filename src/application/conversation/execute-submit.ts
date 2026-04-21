@@ -4,6 +4,7 @@ import { postSubmitWebhook } from '../../integrations/webhook/submit-lead.js';
 import {
   saveClient,
   updateClientPhoneByChatId,
+  upsertChatEstimateRequest,
   type SessionData,
 } from '../../infrastructure/storage/repository.js';
 
@@ -75,6 +76,66 @@ export async function executeSubmitTransportLead(
   return {
     ok: true,
     toolContent: toolJson(true, 'Заявка принята', { webhook_ok: remoteOk }),
+    persisted: true,
+  };
+}
+
+export async function executeSubmitChatEstimateRequest(
+  chatId: string,
+  sessionDefaults: Pick<SessionData, 'itemId' | 'clientName'>,
+  rawArgs: unknown,
+): Promise<ToolExecResult> {
+  if (!rawArgs || typeof rawArgs !== 'object') {
+    return { ok: false, toolContent: toolJson(false, 'Некорректные аргументы'), persisted: false };
+  }
+  const a = rawArgs as Record<string, unknown>;
+  const cargo = String(a.cargo ?? '').trim();
+  const route = String(a.route ?? '').trim();
+  const payment_method = String(a.payment_method ?? a.paymentMethod ?? '').trim();
+  const client_name = String(a.client_name ?? a.clientName ?? sessionDefaults.clientName ?? '').trim();
+  const detailsRaw = a.details ?? a.extra_details;
+  const details =
+    detailsRaw !== undefined && detailsRaw !== null ? String(detailsRaw).trim() || null : null;
+
+  if (!cargo || !route || !payment_method) {
+    return {
+      ok: false,
+      toolContent: toolJson(false, 'Заполните груз, маршрут и форму оплаты'),
+      persisted: false,
+    };
+  }
+
+  upsertChatEstimateRequest({
+    chatId,
+    itemId: sessionDefaults.itemId || '',
+    clientName: client_name || sessionDefaults.clientName || '',
+    cargo,
+    route,
+    paymentMethod: payment_method,
+    details,
+  });
+
+  const remoteOk = await postSubmitWebhook({
+    event: 'chat_estimate',
+    chat_id: chatId,
+    item_id: sessionDefaults.itemId || null,
+    client_name: client_name || sessionDefaults.clientName || null,
+    cargo,
+    route,
+    payment_method,
+    phone: null,
+    details,
+    submitted_at: new Date().toISOString(),
+  });
+
+  if (!remoteOk) {
+    logger.warn({ chatId }, 'Chat estimate saved locally but submit webhook failed');
+  }
+
+  logger.info({ chatId }, 'Chat estimate request saved after tool call');
+  return {
+    ok: true,
+    toolContent: toolJson(true, 'Параметры для расчёта сохранены', { webhook_ok: remoteOk }),
     persisted: true,
   };
 }

@@ -2,11 +2,16 @@ import express, { Request, Response, NextFunction } from 'express';
 import swaggerUi from 'swagger-ui-express';
 import { config } from '../../core/config.js';
 import { logger } from '../../core/logger.js';
+import { deliverQuoteFromChatEstimateId } from '../../application/pricing/deliver-chat-quote.js';
 import {
   getClients,
   getClientById,
   getClientsSince,
   deleteClient,
+  getChatEstimates,
+  getChatEstimateById,
+  getChatEstimatesSince,
+  deleteChatEstimateRequest,
 } from '../../infrastructure/storage/repository.js';
 
 // ─── OpenAPI spec ─────────────────────────────────────────────────────────────
@@ -17,7 +22,7 @@ const swaggerDocument = {
     title: 'Avito Bot — API для 1С',
     version: '1.0.0',
     description:
-      'REST API для выгрузки заявок клиентов, собранных ботом Авито, в 1С или любую внешнюю систему.',
+      'REST API для выгрузки заявок клиентов и запросов расчёта без телефона, собранных ботом Авито, в 1С или любую внешнюю систему.',
     contact: { name: 'Поддержка', email: '' },
   },
   servers: [{ url: '/api/v1', description: 'Основной сервер' }],
@@ -99,6 +104,85 @@ const swaggerDocument = {
           },
         },
         required: ['total', 'items'],
+      },
+      ChatEstimate: {
+        type: 'object',
+        properties: {
+          id: { type: 'integer', description: 'Внутренний ID записи', example: 1 },
+          chatId: { type: 'string', description: 'ID чата в Авито', example: 'u2i-abc123' },
+          itemId: {
+            type: 'string',
+            nullable: true,
+            description: 'ID объявления в Авито',
+            example: '3729834762',
+          },
+          clientName: {
+            type: 'string',
+            nullable: true,
+            description: 'Имя клиента (из профиля Авито)',
+            example: 'Иван Петров',
+          },
+          cargo: {
+            type: 'string',
+            nullable: true,
+            description: 'Характер груза',
+            example: 'Два куба коробок',
+          },
+          route: {
+            type: 'string',
+            nullable: true,
+            description: 'Маршрут перевозки',
+            example: 'Темрюк — Омск',
+          },
+          paymentMethod: {
+            type: 'string',
+            nullable: true,
+            description: 'Форма оплаты',
+            example: 'Безнал с НДС',
+          },
+          details: {
+            type: 'string',
+            nullable: true,
+            description: 'Дополнительные параметры для расчёта (габариты, даты и т.д.)',
+            example: 'Погрузка 22.04, разгрузка с пандуса',
+          },
+          createdAt: {
+            type: 'string',
+            format: 'date-time',
+            description: 'Дата и время создания/обновления записи',
+            example: '2026-04-10 12:34:56',
+          },
+        },
+        required: ['id', 'chatId', 'createdAt'],
+      },
+      ChatEstimateList: {
+        type: 'object',
+        properties: {
+          total: { type: 'integer', description: 'Количество записей в ответе', example: 3 },
+          items: {
+            type: 'array',
+            items: { $ref: '#/components/schemas/ChatEstimate' },
+          },
+        },
+        required: ['total', 'items'],
+      },
+      DeliverQuoteRequest: {
+        type: 'object',
+        properties: {
+          price: {
+            description: 'Стоимость для клиента (как показать в чате: текст или число)',
+            oneOf: [{ type: 'string', example: '45 000 ₽' }, { type: 'number', example: 45000 }],
+          },
+        },
+        required: ['price'],
+      },
+      DeliverQuoteResponse: {
+        type: 'object',
+        properties: {
+          ok: { type: 'boolean', example: true },
+          chat_id: { type: 'string', description: 'ID чата Авито', example: 'u2i-abc123' },
+        },
+        required: ['ok'],
       },
       Error: {
         type: 'object',
@@ -224,6 +308,185 @@ const swaggerDocument = {
         },
       },
     },
+    '/chat-estimates': {
+      get: {
+        summary: 'Запросы расчёта без телефона',
+        description:
+          'Заявки с полными параметрами груза, когда клиент не дал телефон. Фильтр `since` — как у /clients.',
+        operationId: 'getChatEstimates',
+        tags: ['Расчёт без телефона'],
+        parameters: [
+          {
+            name: 'since',
+            in: 'query',
+            required: false,
+            description:
+              'Вернуть только записи с этой даты/времени (включительно). Формат: `YYYY-MM-DD` или `YYYY-MM-DD HH:MM:SS`',
+            schema: { type: 'string', example: '2026-04-10' },
+          },
+        ],
+        responses: {
+          '200': {
+            description: 'Успешно',
+            content: {
+              'application/json': {
+                schema: { $ref: '#/components/schemas/ChatEstimateList' },
+              },
+            },
+          },
+          '401': {
+            description: 'Не авторизован',
+            content: {
+              'application/json': { schema: { $ref: '#/components/schemas/Error' } },
+            },
+          },
+        },
+      },
+    },
+    '/chat-estimates/{id}': {
+      get: {
+        summary: 'Получить запрос расчёта по ID',
+        operationId: 'getChatEstimateById',
+        tags: ['Расчёт без телефона'],
+        parameters: [
+          {
+            name: 'id',
+            in: 'path',
+            required: true,
+            description: 'Внутренний ID записи',
+            schema: { type: 'integer', example: 1 },
+          },
+        ],
+        responses: {
+          '200': {
+            description: 'Найдено',
+            content: {
+              'application/json': {
+                schema: { $ref: '#/components/schemas/ChatEstimate' },
+              },
+            },
+          },
+          '401': {
+            description: 'Не авторизован',
+            content: {
+              'application/json': { schema: { $ref: '#/components/schemas/Error' } },
+            },
+          },
+          '404': {
+            description: 'Не найдено',
+            content: {
+              'application/json': { schema: { $ref: '#/components/schemas/Error' } },
+            },
+          },
+        },
+      },
+      delete: {
+        summary: 'Удалить запрос расчёта по ID',
+        description: 'Удаляет запись после успешного импорта во внешнюю систему.',
+        operationId: 'deleteChatEstimate',
+        tags: ['Расчёт без телефона'],
+        parameters: [
+          {
+            name: 'id',
+            in: 'path',
+            required: true,
+            description: 'Внутренний ID записи',
+            schema: { type: 'integer', example: 1 },
+          },
+        ],
+        responses: {
+          '200': {
+            description: 'Удалено',
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  properties: { ok: { type: 'boolean', example: true } },
+                },
+              },
+            },
+          },
+          '401': {
+            description: 'Не авторизован',
+            content: {
+              'application/json': { schema: { $ref: '#/components/schemas/Error' } },
+            },
+          },
+          '404': {
+            description: 'Не найдено',
+            content: {
+              'application/json': { schema: { $ref: '#/components/schemas/Error' } },
+            },
+          },
+        },
+      },
+    },
+    '/chat-estimates/{id}/deliver-quote': {
+      post: {
+        summary: 'Отправить цену в чат и запросить телефон',
+        description:
+          'По ID записи из chat-estimates отправляет в чат Авито текст с ценой и просьбой указать телефон; создаёт или обновляет строку в таблице заявок (clients) **без** телефона и сбрасывает сессию бота. Дальнейшие сообщения клиента обрабатываются в режиме дозаполнения телефона — после подтверждения номера телефон сохраняется в clients.',
+        operationId: 'deliverChatEstimateQuote',
+        tags: ['Расчёт без телефона'],
+        parameters: [
+          {
+            name: 'id',
+            in: 'path',
+            required: true,
+            description: 'Внутренний ID записи chat_estimate_requests',
+            schema: { type: 'integer', example: 1 },
+          },
+        ],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: { $ref: '#/components/schemas/DeliverQuoteRequest' },
+            },
+          },
+        },
+        responses: {
+          '200': {
+            description: 'Сообщение отправлено, заявка без телефона подготовлена',
+            content: {
+              'application/json': {
+                schema: { $ref: '#/components/schemas/DeliverQuoteResponse' },
+              },
+            },
+          },
+          '400': {
+            description: 'Нет или пустое поле price',
+            content: {
+              'application/json': { schema: { $ref: '#/components/schemas/Error' } },
+            },
+          },
+          '401': {
+            description: 'Не авторизован',
+            content: {
+              'application/json': { schema: { $ref: '#/components/schemas/Error' } },
+            },
+          },
+          '404': {
+            description: 'Запись расчёта не найдена',
+            content: {
+              'application/json': { schema: { $ref: '#/components/schemas/Error' } },
+            },
+          },
+          '409': {
+            description: 'У чата уже есть телефон в clients',
+            content: {
+              'application/json': { schema: { $ref: '#/components/schemas/Error' } },
+            },
+          },
+          '502': {
+            description: 'Ошибка API Авито при отправке сообщения',
+            content: {
+              'application/json': { schema: { $ref: '#/components/schemas/Error' } },
+            },
+          },
+        },
+      },
+    },
   },
 };
 
@@ -250,7 +513,8 @@ function requireAuth(req: Request, res: Response, next: NextFunction): void {
 
 // ─── Server ───────────────────────────────────────────────────────────────────
 
-export function startApiServer(): void {
+/** Express-приложение без listen — для тестов (supertest) и продакшена. */
+export function createApiApp(): express.Application {
   const app = express();
   app.use(express.json());
 
@@ -310,9 +574,66 @@ export function startApiServer(): void {
     res.json({ ok: true });
   });
 
+  // GET /api/v1/chat-estimates[?since=...]
+  app.get('/api/v1/chat-estimates', requireAuth, (req: Request, res: Response) => {
+    const since = req.query.since as string | undefined;
+    const items = since ? getChatEstimatesSince(since) : getChatEstimates();
+    res.json({ total: items.length, items });
+  });
+
+  // GET /api/v1/chat-estimates/:id
+  app.get('/api/v1/chat-estimates/:id', requireAuth, (req: Request, res: Response) => {
+    const id = parseInt(String(req.params.id), 10);
+    if (isNaN(id)) {
+      res.status(400).json({ error: 'Некорректный ID' });
+      return;
+    }
+    const row = getChatEstimateById(id);
+    if (!row) {
+      res.status(404).json({ error: 'Запись не найдена' });
+      return;
+    }
+    res.json(row);
+  });
+
+  // DELETE /api/v1/chat-estimates/:id
+  app.delete('/api/v1/chat-estimates/:id', requireAuth, (req: Request, res: Response) => {
+    const id = parseInt(String(req.params.id), 10);
+    if (isNaN(id)) {
+      res.status(400).json({ error: 'Некорректный ID' });
+      return;
+    }
+    const deleted = deleteChatEstimateRequest(id);
+    if (!deleted) {
+      res.status(404).json({ error: 'Запись не найдена' });
+      return;
+    }
+    res.json({ ok: true });
+  });
+
+  // POST /api/v1/chat-estimates/:id/deliver-quote  { "price": "45 000 ₽" }
+  app.post(
+    '/api/v1/chat-estimates/:id/deliver-quote',
+    requireAuth,
+    async (req: Request, res: Response) => {
+      const id = parseInt(String(req.params.id), 10);
+      if (isNaN(id)) {
+        res.status(400).json({ error: 'Некорректный ID' });
+        return;
+      }
+      const result = await deliverQuoteFromChatEstimateId(id, req.body);
+      res.status(result.status).json(result.body);
+    },
+  );
+
   // Health
   app.get('/health', (_req, res) => res.json({ ok: true }));
 
+  return app;
+}
+
+export function startApiServer(): void {
+  const app = createApiApp();
   const port = config.api.port;
   app.listen(port, () => {
     logger.info('API server listening on port %d  →  http://localhost:%d/docs', port, port);
