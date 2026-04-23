@@ -26,12 +26,14 @@ describe('repository', () => {
       itemId: 'item1',
       clientName: 'Иван',
       cargo: 'коробки',
+      cargoDetails: '2 паллеты, до 1.5 т',
       route: 'Москва — Тверь',
       paymentMethod: 'нал',
       phone: '+79001234567',
     });
     const byChat = getClientByChatId('ch-1');
     expect(byChat?.phone).toBe('+79001234567');
+    expect(byChat?.cargoDetails).toBe('2 паллеты, до 1.5 т');
     const byId = getClientById(byChat!.id);
     expect(byId?.chatId).toBe('ch-1');
   });

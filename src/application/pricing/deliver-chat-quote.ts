@@ -2,10 +2,10 @@ import { normalizePhone } from '../../core/phone.js';
 import { logger } from '../../core/logger.js';
 import { sendMessage } from '../../integrations/avito/client.js';
 import {
-  deleteSession,
   getChatEstimateById,
   getClientByChatId,
   saveClient,
+  saveSession,
   type ChatEstimateRecord,
   type SessionData,
 } from '../../infrastructure/storage/repository.js';
@@ -33,8 +33,8 @@ function parsePriceFromBody(body: unknown): string {
 }
 
 /**
- * Отправляет в чат Avito цену, просит телефон; создаёт/обновляет строку в clients без телефона
- * и сбрасывает сессию, чтобы следующий ответ клиента обрабатывался в режиме phone_backfill.
+ * Отправляет в чат Avito цену, создаёт/обновляет clients без телефона
+ * и переводит диалог в post_quote для анализа реакции клиента.
  */
 export async function deliverQuoteFromChatEstimateId(
   estimateId: number,
@@ -71,8 +71,6 @@ export async function deliverQuoteFromChatEstimateId(
     'По вашему запросу готов расчёт стоимости.',
     '',
     `Стоимость перевозки: ${price}`,
-    '',
-    'Напишите, пожалуйста, номер телефона для связи в формате +7… или 8… — мы внесём его в заявку, менеджер сможет согласовать детали.',
   ].join('\n');
 
   try {
@@ -91,6 +89,7 @@ export async function deliverQuoteFromChatEstimateId(
     itemId: estimate.itemId ?? '',
     clientName: estimate.clientName ?? '',
     cargo: buildCargoForClient(estimate),
+    cargoDetails: (estimate.details ?? '').trim() || '',
     route: (estimate.route ?? '').trim() || '—',
     paymentMethod: (estimate.paymentMethod ?? '').trim() || '—',
     phone: '',
@@ -98,7 +97,13 @@ export async function deliverQuoteFromChatEstimateId(
 
   try {
     saveClient(row);
-    deleteSession(chatId);
+    saveSession(chatId, 'LLM', {
+      ...row,
+      capturedPhone: undefined,
+      llmMessages: [],
+      chatMode: 'post_quote',
+      postQuotePhase: 'awaiting_sentiment',
+    });
   } catch (err) {
     logger.error({ err, chatId, estimateId }, 'deliver-quote: saveClient/deleteSession failed');
     return {

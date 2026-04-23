@@ -32,6 +32,11 @@ try {
 } catch {
   // column already exists
 }
+try {
+  db.exec('ALTER TABLE clients ADD COLUMN cargo_details TEXT');
+} catch {
+  // column already exists
+}
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS chat_estimate_requests (
@@ -66,6 +71,7 @@ export interface SessionData {
   route: string;
   paymentMethod: string;
   phone: string;
+  cargoDetails?: string;
   /** Телефон уже сохранён в clients до полного опроса (первый сценарий). */
   capturedPhone?: string;
   /** История диалога с моделью (без system) */
@@ -75,8 +81,17 @@ export interface SessionData {
    * survey — полная заявка с телефоном;
    * survey_estimate_only — только расчёт по параметрам без телефона;
    * phone_backfill — в БД уже есть заявка, не хватает телефона.
+   * engaged — обычный свободный диалог, телефон уже есть;
+   * post_quote — реакция после отправленной цены.
    */
-  chatMode?: 'phone_intent' | 'survey' | 'survey_estimate_only' | 'phone_backfill';
+  chatMode?:
+    | 'phone_intent'
+    | 'survey'
+    | 'survey_estimate_only'
+    | 'phone_backfill'
+    | 'engaged'
+    | 'post_quote';
+  postQuotePhase?: 'awaiting_sentiment' | 'awaiting_phone' | 'phone_captured';
 }
 
 export interface Session {
@@ -125,6 +140,7 @@ export interface ClientRecord {
   itemId: string | null;
   clientName: string | null;
   cargo: string | null;
+  cargoDetails: string | null;
   route: string | null;
   paymentMethod: string | null;
   phone: string | null;
@@ -132,11 +148,12 @@ export interface ClientRecord {
 }
 
 const stmtInsertClient = db.prepare(`
-  INSERT INTO clients (chat_id, item_id, client_name, cargo, route, payment_method, phone, created_at)
-  VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))
+  INSERT INTO clients (chat_id, item_id, client_name, cargo, cargo_details, route, payment_method, phone, created_at)
+  VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
   ON CONFLICT(chat_id) DO UPDATE SET item_id        = excluded.item_id,
                                      client_name    = excluded.client_name,
                                      cargo          = excluded.cargo,
+                                     cargo_details  = excluded.cargo_details,
                                      route          = excluded.route,
                                      payment_method = excluded.payment_method,
                                      phone          = excluded.phone,
@@ -144,21 +161,21 @@ const stmtInsertClient = db.prepare(`
 `);
 
 const stmtGetClients = db.prepare(
-  'SELECT id, chat_id, item_id, client_name, cargo, route, payment_method, phone, created_at FROM clients ORDER BY id DESC',
+  'SELECT id, chat_id, item_id, client_name, cargo, cargo_details, route, payment_method, phone, created_at FROM clients ORDER BY id DESC',
 );
 const stmtGetClientById = db.prepare(
-  'SELECT id, chat_id, item_id, client_name, cargo, route, payment_method, phone, created_at FROM clients WHERE id = ?',
+  'SELECT id, chat_id, item_id, client_name, cargo, cargo_details, route, payment_method, phone, created_at FROM clients WHERE id = ?',
 );
 const stmtGetClientsSince = db.prepare(
-  `SELECT id, chat_id, item_id, client_name, cargo, route, payment_method, phone, created_at
+  `SELECT id, chat_id, item_id, client_name, cargo, cargo_details, route, payment_method, phone, created_at
    FROM clients WHERE created_at >= ? ORDER BY id ASC`,
 );
 const stmtDeleteClient = db.prepare('DELETE FROM clients WHERE id = ?');
 const stmtGetClientByChatId = db.prepare(
-  'SELECT id, chat_id, item_id, client_name, cargo, route, payment_method, phone, created_at FROM clients WHERE chat_id = ?',
+  'SELECT id, chat_id, item_id, client_name, cargo, cargo_details, route, payment_method, phone, created_at FROM clients WHERE chat_id = ?',
 );
 const stmtGetClientsMissingPhone = db.prepare(
-  `SELECT id, chat_id, item_id, client_name, cargo, route, payment_method, phone, created_at
+  `SELECT id, chat_id, item_id, client_name, cargo, cargo_details, route, payment_method, phone, created_at
    FROM clients
    WHERE phone IS NULL OR trim(phone) = ''
    ORDER BY id ASC`,
@@ -175,6 +192,7 @@ export function saveClient(data: SessionData & { chatId: string }): void {
     data.itemId || null,
     data.clientName || null,
     data.cargo || null,
+    data.cargoDetails || null,
     data.route || null,
     data.paymentMethod || null,
     data.phone || null,
@@ -187,6 +205,7 @@ type ClientRow = {
   item_id: string | null;
   client_name: string | null;
   cargo: string | null;
+  cargo_details: string | null;
   route: string | null;
   payment_method: string | null;
   phone: string | null;
@@ -200,6 +219,7 @@ function rowToRecord(r: ClientRow): ClientRecord {
     itemId: r.item_id,
     clientName: r.client_name,
     cargo: r.cargo,
+    cargoDetails: r.cargo_details,
     route: r.route,
     paymentMethod: r.payment_method,
     phone: r.phone,

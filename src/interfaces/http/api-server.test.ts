@@ -50,6 +50,28 @@ describe('createApiApp', () => {
     expect(res.status).toBe(404);
   });
 
+  it('GET /api/v1/clients/:id returns cargoDetails', async () => {
+    saveClient({
+      chatId: 'api-client-cargo',
+      itemId: 'i1',
+      clientName: 'Иван',
+      cargo: 'Мебель',
+      cargoDetails: '2 шкафа, 600 кг',
+      route: 'Тверь — Москва',
+      paymentMethod: 'безнал',
+      phone: '+79001234567',
+    });
+    const { getClientByChatId } = await import('../../infrastructure/storage/repository.js');
+    const id = getClientByChatId('api-client-cargo')!.id;
+
+    const { createApiApp } = await import('./api-server.js');
+    const res = await request(createApiApp())
+      .get(`/api/v1/clients/${id}`)
+      .set('Authorization', `Bearer ${API_TOKEN}`);
+    expect(res.status).toBe(200);
+    expect(res.body.cargoDetails).toBe('2 шкафа, 600 кг');
+  });
+
   it('GET /api/v1/chat-estimates', async () => {
     const { createApiApp } = await import('./api-server.js');
     const res = await request(createApiApp())

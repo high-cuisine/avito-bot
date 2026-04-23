@@ -67,6 +67,12 @@ const swaggerDocument = {
             description: 'Характер груза',
             example: 'Два куба коробок, детский питбайк',
           },
+          cargoDetails: {
+            type: 'string',
+            nullable: true,
+            description: 'Характеристики груза (габариты, вес, доп.условия)',
+            example: 'Вес до 5 т, погрузка с пандуса, длина 6 м',
+          },
           route: {
             type: 'string',
             nullable: true,

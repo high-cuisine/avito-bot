@@ -24,6 +24,7 @@ export interface LlmContext {
   /** Телефон уже в заявке (ранний ввод или БД). */
   knownPhone?: string;
 }
+export type PriceReaction = 'positive' | 'negative' | 'neutral';
 
 export interface LlmTurnResult {
   /** Текст, который уходит клиенту в Avito */
@@ -149,6 +150,26 @@ function buildTechnicalInstructions(ctx: LlmContext): string {
     ].join('\n');
   }
 
+  if (ctx.chatMode === 'engaged') {
+    return [
+      `Ты ассистент в мессенджере Авито. Клиент: «${name}».`,
+      item,
+      'Телефон клиента уже есть в заявке. Не проси телефон заново и не отправляй шаблон первого приветствия.',
+      'Отвечай по сути вопроса клиента и по базе знаний. Коротко и по-русски.',
+    ].join('\n');
+  }
+
+  if (ctx.chatMode === 'post_quote') {
+    return [
+      `Ты ассистент в мессенджере Авито. Клиент: «${name}».`,
+      item,
+      'Клиент получил цену в чате. Не повторяй шаблон первого приветствия.',
+      'Если клиент явно готов оставить номер для звонка — мягко собери и подтверди телефон; затем вызови submit_phone_backfill.',
+      'Если клиент не готов обсуждать номер — продолжай вежливый диалог по сути.',
+      'Общайся только по-русски.',
+    ].join('\n');
+  }
+
   if (ctx.chatMode === 'phone_intent') {
     return [
       `Ты ассистент в мессенджере Авито. Клиент: «${name}».`,
@@ -197,12 +218,16 @@ function toolsForMode(chatMode: LlmContext['chatMode']) {
   switch (chatMode) {
     case 'phone_backfill':
       return [phoneTool()];
+    case 'post_quote':
+      return [phoneTool()];
     case 'phone_intent':
       return [phoneIntentTool()];
     case 'survey':
       return [transportTool()];
     case 'survey_estimate_only':
       return [chatEstimateTool()];
+    case 'engaged':
+      return [];
     default:
       return [phoneIntentTool()];
   }
@@ -298,8 +323,7 @@ export async function runLlmTurn(
   const first = await callChatCompletions({
     model: config.openai.model,
     messages: baseMessages,
-    tools,
-    tool_choice: 'auto',
+    ...(tools.length > 0 ? { tools, tool_choice: 'auto' } : {}),
     temperature: 0.45,
     max_tokens: 1200,
   });
@@ -397,4 +421,35 @@ export async function runLlmTurn(
     : 'Уточните, пожалуйста, данные ещё раз.';
   newHistoryEntries.push({ role: 'assistant', content: fallback });
   return { reply: fallback, newHistoryEntries, sessionEnded };
+}
+
+export async function classifyPriceReaction(userMessage: string): Promise<PriceReaction> {
+  const first = await callChatCompletions({
+    model: config.openai.model,
+    messages: [
+      {
+        role: 'system',
+        content:
+          'Определи реакцию клиента на цену перевозки. Верни строго JSON вида {"reaction":"positive|negative|neutral"} без пояснений.',
+      },
+      { role: 'user', content: userMessage },
+    ],
+    temperature: 0,
+    max_tokens: 80,
+  });
+
+  const text = (first?.message?.content ?? '').trim();
+  if (!text) return 'neutral';
+
+  try {
+    const parsed = JSON.parse(text) as { reaction?: string };
+    if (parsed.reaction === 'positive') return 'positive';
+    if (parsed.reaction === 'negative') return 'negative';
+    return 'neutral';
+  } catch {
+    const lowered = text.toLowerCase();
+    if (lowered.includes('positive')) return 'positive';
+    if (lowered.includes('negative')) return 'negative';
+    return 'neutral';
+  }
 }

@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   clearDatabaseForTests,
   getClientByChatId,
+  getSession,
   upsertChatEstimateRequest,
 } from '../../infrastructure/storage/repository.js';
 
@@ -74,14 +75,16 @@ describe('deliverQuoteFromChatEstimateId', () => {
     const r = await deliverQuoteFromChatEstimateId(id, { price: 125000 });
 
     expect(r.status).toBe(200);
-    expect(sendMessage).toHaveBeenCalledWith(
-      'ch-ok',
-      expect.stringContaining('125000'),
-    );
+    expect(sendMessage).toHaveBeenCalledWith('ch-ok', expect.stringContaining('125000'));
+    expect(sendMessage).not.toHaveBeenCalledWith('ch-ok', expect.stringContaining('номер телефона'));
     const client = getClientByChatId('ch-ok');
     expect(client?.phone).toBeNull();
     expect(client?.cargo).toContain('кирпич');
     expect(client?.cargo).toContain('Дополнительно: 2 т');
+    expect(client?.cargoDetails).toBe('2 т');
+    const session = getSession('ch-ok');
+    expect(session?.data.chatMode).toBe('post_quote');
+    expect(session?.data.postQuotePhase).toBe('awaiting_sentiment');
   });
 
   it('returns 502 when Avito send fails', async () => {

@@ -5,8 +5,18 @@ import {
   getChatById,
   type AvitoChat,
 } from '../../integrations/avito/client.js';
-import { runLlmTurn } from '../../integrations/openai/chat.js';
+import { classifyPriceReaction, runLlmTurn } from '../../integrations/openai/chat.js';
 import { postSubmitWebhook } from '../../integrations/webhook/submit-lead.js';
+import { executeSubmitPhoneBackfill } from './execute-submit.js';
+import {
+  CALLBACK_HOURS_COLON,
+  CALLBACK_HOURS_DASH,
+  PHONE_INTENT_OPENING_REPLY,
+  POST_QUOTE_NEGATIVE_REPLY,
+  POST_QUOTE_PHONE_PROMPT,
+  THANKS_CALLBACK_SOON,
+  isWhenCallbackQuestion,
+} from './copy.js';
 import {
   getSession,
   saveSession,
@@ -19,13 +29,6 @@ import {
 
 const LLM_STATE = 'LLM';
 const MAX_LLM_HISTORY = 40;
-
-/** Первый ответ в режиме phone_intent — только из кода, без LLM (жёсткая просьба телефона). */
-const PHONE_INTENT_OPENING_REPLY =
-  'Да, добрый день! Грузоперевозки, меня зовут Анна. Напишите, пожалуйста, ваш номер телефона в формате +7… или 8…, чтобы менеджер перезвонил с расчётом стоимости перевозки.';
-
-const THANKS_PHONE_DONE =
-  'Спасибо! Номер записали — менеджер перезвонит вам для расчёта и согласования. Дополнительно в чате ничего указывать не нужно.';
 
 const LEGACY_STATES = new Set([
   'ASK_CARGO',
@@ -112,6 +115,21 @@ export async function handleConversation(
       };
       saveSession(chatId, LLM_STATE, data);
       session = getSession(chatId);
+    } else if (existingClient?.phone) {
+      const data: SessionData = {
+        ...emptyData(),
+        itemId: existingClient.itemId ?? '',
+        clientName: existingClient.clientName ?? '',
+        cargo: existingClient.cargo ?? '',
+        route: existingClient.route ?? '',
+        paymentMethod: existingClient.paymentMethod ?? '',
+        phone: existingClient.phone,
+        capturedPhone: existingClient.phone,
+        chatMode: 'engaged',
+        llmMessages: [],
+      };
+      saveSession(chatId, LLM_STATE, data);
+      session = getSession(chatId);
     } else {
       const { clientName, itemId } = await resolveClientInfo(chatId, chatContext);
       const data: SessionData = {
@@ -169,8 +187,63 @@ export async function handleConversation(
       }
       deleteSession(chatId);
       logger.info({ chatId, phone: earlyPhone, webhook_ok: whOk }, 'Phone-only lead completed');
-      return THANKS_PHONE_DONE;
+      return THANKS_CALLBACK_SOON;
     }
+  }
+
+  if (mode === 'post_quote') {
+    const phase = data.postQuotePhase ?? 'awaiting_sentiment';
+    if (phase === 'awaiting_sentiment') {
+      const reaction = await classifyPriceReaction(text);
+      if (reaction === 'positive') {
+        data.postQuotePhase = 'awaiting_phone';
+        appendTurn(data, text, [{ role: 'assistant', content: POST_QUOTE_PHONE_PROMPT }]);
+        saveSession(chatId, LLM_STATE, data);
+        return POST_QUOTE_PHONE_PROMPT;
+      }
+      if (reaction === 'negative') {
+        data.chatMode = 'phone_backfill';
+        data.postQuotePhase = undefined;
+        appendTurn(data, text, [{ role: 'assistant', content: POST_QUOTE_NEGATIVE_REPLY }]);
+        saveSession(chatId, LLM_STATE, data);
+        return POST_QUOTE_NEGATIVE_REPLY;
+      }
+      data.chatMode = 'phone_backfill';
+      data.postQuotePhase = undefined;
+    } else if (phase === 'awaiting_phone') {
+      const phone = normalizePhone(text);
+      if (phone) {
+        const exec = await executeSubmitPhoneBackfill(chatId, { phone });
+        data.postQuotePhase = 'phone_captured';
+        if (!exec.ok) {
+          logger.warn({ chatId, toolContent: exec.toolContent }, 'Post-quote phone save failed');
+        }
+        appendTurn(data, text, [{ role: 'assistant', content: THANKS_CALLBACK_SOON }]);
+        saveSession(chatId, LLM_STATE, data);
+        return THANKS_CALLBACK_SOON;
+      }
+      if (isWhenCallbackQuestion(text)) {
+        appendTurn(data, text, [{ role: 'assistant', content: CALLBACK_HOURS_COLON }]);
+        saveSession(chatId, LLM_STATE, data);
+        return CALLBACK_HOURS_COLON;
+      }
+      data.chatMode = 'phone_backfill';
+      data.postQuotePhase = undefined;
+    } else if (phase === 'phone_captured') {
+      if (isWhenCallbackQuestion(text)) {
+        appendTurn(data, text, [{ role: 'assistant', content: CALLBACK_HOURS_COLON }]);
+        saveSession(chatId, LLM_STATE, data);
+        return CALLBACK_HOURS_COLON;
+      }
+      data.chatMode = 'engaged';
+      data.postQuotePhase = undefined;
+    }
+  }
+
+  if (mode === 'engaged' && isWhenCallbackQuestion(text)) {
+    appendTurn(data, text, [{ role: 'assistant', content: CALLBACK_HOURS_DASH }]);
+    saveSession(chatId, LLM_STATE, data);
+    return CALLBACK_HOURS_DASH;
   }
 
   const knownPhoneNorm =
@@ -178,8 +251,11 @@ export async function handleConversation(
     (data.phone?.trim() ? normalizePhone(data.phone) : null) ||
     undefined;
 
+  const currentMode = data.chatMode ?? mode;
+  const llmMode: NonNullable<SessionData['chatMode']> =
+    currentMode === 'post_quote' ? 'phone_backfill' : currentMode;
   const result = await runLlmTurn(text, history, {
-    chatMode: mode,
+    chatMode: llmMode,
     chatId,
     clientName: data.clientName,
     itemId: data.itemId,
