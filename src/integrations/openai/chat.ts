@@ -19,6 +19,8 @@ export interface LlmContext {
   clientName: string;
   itemId: string;
   knownCargo?: string;
+  knownWeight?: string;
+  knownVolume?: string;
   knownRoute?: string;
   knownPayment?: string;
   /** Телефон уже в заявке (ранний ввод или БД). */
@@ -48,11 +50,13 @@ function transportTool() {
     function: {
       name: TOOL_TRANSPORT,
       description:
-        'Вызови один раз, когда собраны груз, маршрут, оплата и клиент подтвердил сводку. Телефон в аргументах обязателен, только если его ещё нет в заявке (иначе передай тот же номер или пустую строку — сервер подставит сохранённый).',
+        'Вызови один раз, когда собраны маршрут, характер груза, вес, объём, оплата и клиент подтвердил сводку. Телефон в аргументах обязателен, только если его ещё нет в заявке (иначе передай тот же номер или пустую строку — сервер подставит сохранённый).',
       parameters: {
         type: 'object',
         properties: {
-          cargo: { type: 'string', description: 'Характер груза и при необходимости вес' },
+          cargo: { type: 'string', description: 'Характер груза' },
+          weight: { type: 'string', description: 'Вес груза (например: 1200 кг)' },
+          volume: { type: 'string', description: 'Объём груза (например: 8 м3)' },
           route: { type: 'string', description: 'Откуда — куда' },
           payment_method: { type: 'string', description: 'Форма оплаты' },
           phone: {
@@ -62,7 +66,7 @@ function transportTool() {
           },
           client_name: { type: 'string', description: 'Имя клиента, если известно' },
         },
-        required: ['cargo', 'route', 'payment_method'],
+        required: ['cargo', 'route', 'weight', 'volume', 'payment_method'],
       },
     },
   };
@@ -78,7 +82,9 @@ function chatEstimateTool() {
       parameters: {
         type: 'object',
         properties: {
-          cargo: { type: 'string', description: 'Характер груза и при необходимости вес' },
+          cargo: { type: 'string', description: 'Характер груза' },
+          weight: { type: 'string', description: 'Вес груза (например: 1200 кг)' },
+          volume: { type: 'string', description: 'Объём груза (например: 8 м3)' },
           route: { type: 'string', description: 'Откуда — куда' },
           payment_method: { type: 'string', description: 'Форма оплаты' },
           client_name: { type: 'string', description: 'Имя клиента, если известно' },
@@ -88,7 +94,7 @@ function chatEstimateTool() {
               'Все дополнительные уточнения для расчёта: габариты, даты, особенности погрузки и т.п.',
           },
         },
-        required: ['cargo', 'route', 'payment_method'],
+        required: ['cargo', 'route', 'weight', 'volume', 'payment_method'],
       },
     },
   };
@@ -142,7 +148,7 @@ function buildTechnicalInstructions(ctx: LlmContext): string {
     return [
       `Ты вежливый ассистент в чате Авито. Клиенту «${name}» уже оформлена заявка.`,
       item,
-      `Уже известно: груз — ${ctx.knownCargo || '—'}; маршрут — ${ctx.knownRoute || '—'}; оплата — ${ctx.knownPayment || '—'}.`,
+      `Уже известно: груз — ${ctx.knownCargo || '—'}; вес — ${ctx.knownWeight || '—'}; объём — ${ctx.knownVolume || '—'}; маршрут — ${ctx.knownRoute || '—'}; оплата — ${ctx.knownPayment || '—'}.`,
       'Мягко запроси телефон в РФ (+7… или 8…), переспроси подтверждение.',
       `Когда клиент явно подтвердил номер — вызови инструмент **${TOOL_PHONE}** с полем phone в формате +7XXXXXXXXXX.`,
       'До этого момента общайся обычным текстом в сообщениях (без вызова инструмента).',
@@ -192,7 +198,7 @@ function buildTechnicalInstructions(ctx: LlmContext): string {
       `Ты ассистент в мессенджере Авито. Клиент: «${name}».`,
       item,
       'Клиент **не** оставляет телефон на входе; ведёшь **второй сценарий**: расчёт по параметрам в чате.',
-      'Собери маршрут, груз и вес по возможности, форму оплаты, все уточнения в поле **details** (габариты, даты и т.д.); сводка и явное подтверждение.',
+      'Собери отдельно маршрут, характер груза, вес, объём, форму оплаты, все уточнения в поле **details** (габариты, даты и т.д.); сводка и явное подтверждение.',
       `После подтверждения вызови **${TOOL_CHAT_ESTIMATE}** один раз. Телефон в этом режиме **не** собирай для заявки.`,
       'До подтверждённой сводки — только текст. Общайся только по-русски.',
     ].join('\n');
@@ -200,8 +206,8 @@ function buildTechnicalInstructions(ctx: LlmContext): string {
 
   // survey — стандартная заявка с телефоном
   const phoneNote = ctx.knownPhone
-    ? `Телефон **уже сохранён** в заявке: ${ctx.knownPhone}. **Не** проси номер заново; в **${TOOL_TRANSPORT}** в поле phone передай тот же номер или оставь пустым — сервер подставит сохранённый. Собери только груз, маршрут, оплату и сводку.`
-    : 'Собери груз и вес по возможности, маршрут, оплату, телефон; сводка и явное подтверждение. Телефон в аргументах инструмента — строго +7 и 10 цифр после.';
+    ? `Телефон **уже сохранён** в заявке: ${ctx.knownPhone}. **Не** проси номер заново; в **${TOOL_TRANSPORT}** в поле phone передай тот же номер или оставь пустым — сервер подставит сохранённый. Собери маршрут, характер груза, вес, объём, оплату и сводку.`
+    : 'Собери отдельно маршрут, характер груза, вес, объём, оплату и телефон; сводка и явное подтверждение. Телефон в аргументах инструмента — строго +7 и 10 цифр после.';
 
   return [
     `Ты ассистент в мессенджере Авито. Клиент: «${name}».`,

@@ -67,6 +67,18 @@ const swaggerDocument = {
             description: 'Характер груза',
             example: 'Два куба коробок, детский питбайк',
           },
+          weight: {
+            type: 'string',
+            nullable: true,
+            description: 'Вес груза',
+            example: '1200 кг',
+          },
+          volume: {
+            type: 'string',
+            nullable: true,
+            description: 'Объём груза',
+            example: '8 м3',
+          },
           cargoDetails: {
             type: 'string',
             nullable: true,
@@ -133,6 +145,18 @@ const swaggerDocument = {
             nullable: true,
             description: 'Характер груза',
             example: 'Два куба коробок',
+          },
+          weight: {
+            type: 'string',
+            nullable: true,
+            description: 'Вес груза',
+            example: '1200 кг',
+          },
+          volume: {
+            type: 'string',
+            nullable: true,
+            description: 'Объём груза',
+            example: '8 м3',
           },
           route: {
             type: 'string',

@@ -89,6 +89,8 @@ export async function deliverQuoteFromChatEstimateId(
     itemId: estimate.itemId ?? '',
     clientName: estimate.clientName ?? '',
     cargo: buildCargoForClient(estimate),
+    weight: (estimate.weight ?? '').trim(),
+    volume: (estimate.volume ?? '').trim(),
     cargoDetails: (estimate.details ?? '').trim() || '',
     route: (estimate.route ?? '').trim() || '—',
     paymentMethod: (estimate.paymentMethod ?? '').trim() || '—',

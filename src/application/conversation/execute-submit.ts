@@ -53,8 +53,8 @@ export async function executeDeclarePhoneContactPath(
   saveSession(chatId, session.state, data);
 
   const hint = v
-    ? 'Дальше соберите груз, маршрут, оплату и сводку. Если номер уже прислали ранее — он в заявке; при submit_transport_lead телефон подставится из сохранённого.'
-    : 'Дальше сценарий без телефона: груз, маршрут, оплата, уточнения в details; затем submit_chat_estimate_request.';
+    ? 'Дальше соберите маршрут, характер груза, вес, объём, оплату и сводку. Если номер уже прислали ранее — он в заявке; при submit_transport_lead телефон подставится из сохранённого.'
+    : 'Дальше сценарий без телефона: маршрут, характер груза, вес, объём, оплата, уточнения в details; затем submit_chat_estimate_request.';
 
   logger.info({ chatId, nextMode }, 'Contact path chosen after phone intent');
   return {
@@ -75,6 +75,8 @@ export async function executeSubmitTransportLead(
   const a = rawArgs as Record<string, unknown>;
   const cargo = String(a.cargo ?? '').trim();
   const route = String(a.route ?? '').trim();
+  const weight = String(a.weight ?? '').trim();
+  const volume = String(a.volume ?? '').trim();
   const payment_method = String(a.payment_method ?? a.paymentMethod ?? '').trim();
   const phoneRaw = String(a.phone ?? '').trim();
   const client_name = String(a.client_name ?? a.clientName ?? sessionDefaults.clientName ?? '').trim();
@@ -85,10 +87,13 @@ export async function executeSubmitTransportLead(
     const fromSession = sess?.data.capturedPhone?.trim() || sess?.data.phone?.trim();
     if (fromSession) phone = normalizePhone(fromSession);
   }
-  if (!cargo || !route || !payment_method || !phone) {
+  if (!cargo || !route || !weight || !volume || !payment_method || !phone) {
     return {
       ok: false,
-      toolContent: toolJson(false, 'Заполните груз, маршрут, оплату и корректный телефон +7…'),
+      toolContent: toolJson(
+        false,
+        'Заполните маршрут, характер груза, вес, объём, оплату и корректный телефон +7…',
+      ),
       persisted: false,
     };
   }
@@ -98,6 +103,8 @@ export async function executeSubmitTransportLead(
     itemId: sessionDefaults.itemId || '',
     clientName: client_name || sessionDefaults.clientName || '',
     cargo,
+    weight,
+    volume,
     route,
     paymentMethod: payment_method,
     phone,
@@ -111,6 +118,8 @@ export async function executeSubmitTransportLead(
     item_id: row.itemId || null,
     client_name: row.clientName || null,
     cargo,
+    weight: weight || null,
+    volume: volume || null,
     route,
     payment_method,
     phone,
@@ -140,16 +149,18 @@ export async function executeSubmitChatEstimateRequest(
   const a = rawArgs as Record<string, unknown>;
   const cargo = String(a.cargo ?? '').trim();
   const route = String(a.route ?? '').trim();
+  const weight = String(a.weight ?? '').trim();
+  const volume = String(a.volume ?? '').trim();
   const payment_method = String(a.payment_method ?? a.paymentMethod ?? '').trim();
   const client_name = String(a.client_name ?? a.clientName ?? sessionDefaults.clientName ?? '').trim();
   const detailsRaw = a.details ?? a.extra_details;
   const details =
     detailsRaw !== undefined && detailsRaw !== null ? String(detailsRaw).trim() || null : null;
 
-  if (!cargo || !route || !payment_method) {
+  if (!cargo || !route || !weight || !volume || !payment_method) {
     return {
       ok: false,
-      toolContent: toolJson(false, 'Заполните груз, маршрут и форму оплаты'),
+      toolContent: toolJson(false, 'Заполните маршрут, характер груза, вес, объём и форму оплаты'),
       persisted: false,
     };
   }
@@ -159,6 +170,8 @@ export async function executeSubmitChatEstimateRequest(
     itemId: sessionDefaults.itemId || '',
     clientName: client_name || sessionDefaults.clientName || '',
     cargo,
+    weight,
+    volume,
     route,
     paymentMethod: payment_method,
     details,
@@ -170,6 +183,8 @@ export async function executeSubmitChatEstimateRequest(
     item_id: sessionDefaults.itemId || null,
     client_name: client_name || sessionDefaults.clientName || null,
     cargo,
+    weight: weight || null,
+    volume: volume || null,
     route,
     payment_method,
     phone: null,

@@ -20,6 +20,8 @@ db.exec(`
     item_id        TEXT,
     client_name    TEXT,
     cargo          TEXT,
+    weight         TEXT,
+    volume         TEXT,
     route          TEXT,
     payment_method TEXT,
     phone          TEXT,
@@ -37,6 +39,16 @@ try {
 } catch {
   // column already exists
 }
+try {
+  db.exec('ALTER TABLE clients ADD COLUMN weight TEXT');
+} catch {
+  // column already exists
+}
+try {
+  db.exec('ALTER TABLE clients ADD COLUMN volume TEXT');
+} catch {
+  // column already exists
+}
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS chat_estimate_requests (
@@ -45,12 +57,24 @@ db.exec(`
     item_id        TEXT,
     client_name    TEXT,
     cargo          TEXT,
+    weight         TEXT,
+    volume         TEXT,
     route          TEXT,
     payment_method TEXT,
     details        TEXT,
     created_at     TEXT NOT NULL DEFAULT (datetime('now'))
   );
 `);
+try {
+  db.exec('ALTER TABLE chat_estimate_requests ADD COLUMN weight TEXT');
+} catch {
+  // column already exists
+}
+try {
+  db.exec('ALTER TABLE chat_estimate_requests ADD COLUMN volume TEXT');
+} catch {
+  // column already exists
+}
 
 export type LlmToolCall = {
   id: string;
@@ -68,6 +92,8 @@ export interface SessionData {
   itemId: string;
   clientName: string;
   cargo: string;
+  weight?: string;
+  volume?: string;
   route: string;
   paymentMethod: string;
   phone: string;
@@ -140,6 +166,8 @@ export interface ClientRecord {
   itemId: string | null;
   clientName: string | null;
   cargo: string | null;
+  weight: string | null;
+  volume: string | null;
   cargoDetails: string | null;
   route: string | null;
   paymentMethod: string | null;
@@ -148,11 +176,13 @@ export interface ClientRecord {
 }
 
 const stmtInsertClient = db.prepare(`
-  INSERT INTO clients (chat_id, item_id, client_name, cargo, cargo_details, route, payment_method, phone, created_at)
-  VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+  INSERT INTO clients (chat_id, item_id, client_name, cargo, weight, volume, cargo_details, route, payment_method, phone, created_at)
+  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
   ON CONFLICT(chat_id) DO UPDATE SET item_id        = excluded.item_id,
                                      client_name    = excluded.client_name,
                                      cargo          = excluded.cargo,
+                                     weight         = excluded.weight,
+                                     volume         = excluded.volume,
                                      cargo_details  = excluded.cargo_details,
                                      route          = excluded.route,
                                      payment_method = excluded.payment_method,
@@ -161,21 +191,21 @@ const stmtInsertClient = db.prepare(`
 `);
 
 const stmtGetClients = db.prepare(
-  'SELECT id, chat_id, item_id, client_name, cargo, cargo_details, route, payment_method, phone, created_at FROM clients ORDER BY id DESC',
+  'SELECT id, chat_id, item_id, client_name, cargo, weight, volume, cargo_details, route, payment_method, phone, created_at FROM clients ORDER BY id DESC',
 );
 const stmtGetClientById = db.prepare(
-  'SELECT id, chat_id, item_id, client_name, cargo, cargo_details, route, payment_method, phone, created_at FROM clients WHERE id = ?',
+  'SELECT id, chat_id, item_id, client_name, cargo, weight, volume, cargo_details, route, payment_method, phone, created_at FROM clients WHERE id = ?',
 );
 const stmtGetClientsSince = db.prepare(
-  `SELECT id, chat_id, item_id, client_name, cargo, cargo_details, route, payment_method, phone, created_at
+  `SELECT id, chat_id, item_id, client_name, cargo, weight, volume, cargo_details, route, payment_method, phone, created_at
    FROM clients WHERE created_at >= ? ORDER BY id ASC`,
 );
 const stmtDeleteClient = db.prepare('DELETE FROM clients WHERE id = ?');
 const stmtGetClientByChatId = db.prepare(
-  'SELECT id, chat_id, item_id, client_name, cargo, cargo_details, route, payment_method, phone, created_at FROM clients WHERE chat_id = ?',
+  'SELECT id, chat_id, item_id, client_name, cargo, weight, volume, cargo_details, route, payment_method, phone, created_at FROM clients WHERE chat_id = ?',
 );
 const stmtGetClientsMissingPhone = db.prepare(
-  `SELECT id, chat_id, item_id, client_name, cargo, cargo_details, route, payment_method, phone, created_at
+  `SELECT id, chat_id, item_id, client_name, cargo, weight, volume, cargo_details, route, payment_method, phone, created_at
    FROM clients
    WHERE phone IS NULL OR trim(phone) = ''
    ORDER BY id ASC`,
@@ -192,6 +222,8 @@ export function saveClient(data: SessionData & { chatId: string }): void {
     data.itemId || null,
     data.clientName || null,
     data.cargo || null,
+    data.weight || null,
+    data.volume || null,
     data.cargoDetails || null,
     data.route || null,
     data.paymentMethod || null,
@@ -205,6 +237,8 @@ type ClientRow = {
   item_id: string | null;
   client_name: string | null;
   cargo: string | null;
+  weight: string | null;
+  volume: string | null;
   cargo_details: string | null;
   route: string | null;
   payment_method: string | null;
@@ -219,6 +253,8 @@ function rowToRecord(r: ClientRow): ClientRecord {
     itemId: r.item_id,
     clientName: r.client_name,
     cargo: r.cargo,
+    weight: r.weight,
+    volume: r.volume,
     cargoDetails: r.cargo_details,
     route: r.route,
     paymentMethod: r.payment_method,
@@ -269,6 +305,8 @@ export interface ChatEstimateRecord {
   itemId: string | null;
   clientName: string | null;
   cargo: string | null;
+  weight: string | null;
+  volume: string | null;
   route: string | null;
   paymentMethod: string | null;
   details: string | null;
@@ -280,17 +318,21 @@ export interface ChatEstimateUpsertInput {
   itemId: string;
   clientName: string;
   cargo: string;
+  weight: string;
+  volume: string;
   route: string;
   paymentMethod: string;
   details: string | null;
 }
 
 const stmtUpsertChatEstimate = db.prepare(`
-  INSERT INTO chat_estimate_requests (chat_id, item_id, client_name, cargo, route, payment_method, details, created_at)
-  VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))
+  INSERT INTO chat_estimate_requests (chat_id, item_id, client_name, cargo, weight, volume, route, payment_method, details, created_at)
+  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
   ON CONFLICT(chat_id) DO UPDATE SET item_id         = excluded.item_id,
                                       client_name    = excluded.client_name,
                                       cargo          = excluded.cargo,
+                                      weight         = excluded.weight,
+                                      volume         = excluded.volume,
                                       route          = excluded.route,
                                       payment_method = excluded.payment_method,
                                       details        = excluded.details,
@@ -298,15 +340,15 @@ const stmtUpsertChatEstimate = db.prepare(`
 `);
 
 const stmtGetChatEstimates = db.prepare(
-  `SELECT id, chat_id, item_id, client_name, cargo, route, payment_method, details, created_at
+  `SELECT id, chat_id, item_id, client_name, cargo, weight, volume, route, payment_method, details, created_at
    FROM chat_estimate_requests ORDER BY id DESC`,
 );
 const stmtGetChatEstimateById = db.prepare(
-  `SELECT id, chat_id, item_id, client_name, cargo, route, payment_method, details, created_at
+  `SELECT id, chat_id, item_id, client_name, cargo, weight, volume, route, payment_method, details, created_at
    FROM chat_estimate_requests WHERE id = ?`,
 );
 const stmtGetChatEstimatesSince = db.prepare(
-  `SELECT id, chat_id, item_id, client_name, cargo, route, payment_method, details, created_at
+  `SELECT id, chat_id, item_id, client_name, cargo, weight, volume, route, payment_method, details, created_at
    FROM chat_estimate_requests WHERE created_at >= ? ORDER BY id ASC`,
 );
 const stmtDeleteChatEstimate = db.prepare('DELETE FROM chat_estimate_requests WHERE id = ?');
@@ -317,6 +359,8 @@ type ChatEstimateRow = {
   item_id: string | null;
   client_name: string | null;
   cargo: string | null;
+  weight: string | null;
+  volume: string | null;
   route: string | null;
   payment_method: string | null;
   details: string | null;
@@ -330,6 +374,8 @@ function chatEstimateRowToRecord(r: ChatEstimateRow): ChatEstimateRecord {
     itemId: r.item_id,
     clientName: r.client_name,
     cargo: r.cargo,
+    weight: r.weight,
+    volume: r.volume,
     route: r.route,
     paymentMethod: r.payment_method,
     details: r.details,
@@ -343,6 +389,8 @@ export function upsertChatEstimateRequest(data: ChatEstimateUpsertInput): void {
     data.itemId || null,
     data.clientName || null,
     data.cargo,
+    data.weight || null,
+    data.volume || null,
     data.route,
     data.paymentMethod,
     data.details,

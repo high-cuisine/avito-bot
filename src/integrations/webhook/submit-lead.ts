@@ -9,6 +9,8 @@ export interface TransportLeadPayload {
   item_id: string | null;
   client_name: string | null;
   cargo: string | null;
+  weight?: string | null;
+  volume?: string | null;
   route: string | null;
   payment_method: string | null;
   phone: string | null;

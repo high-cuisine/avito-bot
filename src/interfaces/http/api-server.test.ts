@@ -73,12 +73,24 @@ describe('createApiApp', () => {
   });
 
   it('GET /api/v1/chat-estimates', async () => {
+    upsertChatEstimateRequest({
+      chatId: 'ce-1',
+      itemId: '1',
+      clientName: 'Клиент',
+      cargo: 'Оборудование',
+      weight: '800 кг',
+      volume: '6 м3',
+      route: 'Казань — Пермь',
+      paymentMethod: 'безнал',
+      details: null,
+    });
     const { createApiApp } = await import('./api-server.js');
     const res = await request(createApiApp())
       .get('/api/v1/chat-estimates')
       .set('Authorization', `Bearer ${API_TOKEN}`);
     expect(res.status).toBe(200);
-    expect(res.body.items).toEqual([]);
+    expect(res.body.items[0].weight).toBe('800 кг');
+    expect(res.body.items[0].volume).toBe('6 м3');
   });
 
   it('POST /api/v1/chat-estimates/:id/deliver-quote', async () => {
@@ -87,6 +99,8 @@ describe('createApiApp', () => {
       itemId: '1',
       clientName: 'Тест',
       cargo: 'груз',
+      weight: '1200 кг',
+      volume: '9 м3',
       route: 'А — Б',
       paymentMethod: 'нал',
       details: null,
@@ -111,6 +125,8 @@ describe('createApiApp', () => {
       itemId: '',
       clientName: '',
       cargo: 'a',
+      weight: '1 кг',
+      volume: '1 м3',
       route: 'b',
       paymentMethod: 'c',
       details: null,
@@ -133,6 +149,8 @@ describe('createApiApp', () => {
       itemId: '',
       clientName: '',
       cargo: 'a',
+      weight: '1 кг',
+      volume: '1 м3',
       route: 'b',
       paymentMethod: 'c',
       details: null,

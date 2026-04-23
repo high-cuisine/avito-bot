@@ -45,6 +45,8 @@ describe('execute-submit', () => {
       {
         cargo: 'песок',
         route: 'А — Б',
+        weight: '2 т',
+        volume: '5 м3',
         payment_method: 'нал',
         phone: '',
       },
@@ -63,6 +65,8 @@ describe('execute-submit', () => {
       {
         cargo: 'груз',
         route: 'X — Y',
+        weight: '1 т',
+        volume: '4 м3',
         payment_method: 'нал',
         phone: '+79031234567',
       },
@@ -78,7 +82,14 @@ describe('execute-submit', () => {
     const r = await executeSubmitChatEstimateRequest(
       'c-est',
       { itemId: 'it2', clientName: 'Олег' },
-      { cargo: 'тент', route: 'М — СПб', payment_method: 'безнал', details: '  важно  ' },
+      {
+        cargo: 'тент',
+        route: 'М — СПб',
+        weight: '1500 кг',
+        volume: '12 м3',
+        payment_method: 'безнал',
+        details: '  важно  ',
+      },
     );
     expect(r.ok).toBe(true);
     const { getChatEstimates, getClientByChatId } = await import(
@@ -93,7 +104,7 @@ describe('execute-submit', () => {
     const r = await executeSubmitChatEstimateRequest(
       'c2',
       { itemId: '', clientName: '' },
-      { cargo: '', route: 'a', payment_method: 'b' },
+      { cargo: '', route: 'a', weight: '', volume: '', payment_method: 'b' },
     );
     expect(r.ok).toBe(false);
   });
