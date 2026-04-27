@@ -54,7 +54,7 @@ export async function executeDeclarePhoneContactPath(
 
   const hint = v
     ? 'Дальше соберите маршрут, характер груза, вес, объём, оплату и сводку. Если номер уже прислали ранее — он в заявке; при submit_transport_lead телефон подставится из сохранённого.'
-    : 'Дальше сценарий без телефона: маршрут, характер груза, вес, объём, оплата, уточнения в details; затем submit_chat_estimate_request.';
+    : 'Режим изменён: расчёт без телефона. ЗАПРЕЩЕНО просить номер телефона — ни разу. Сразу начни собирать параметры: маршрут, характер груза, вес, объём, форма оплаты, уточнения в details. Затем submit_chat_estimate_request.';
 
   logger.info({ chatId, nextMode }, 'Contact path chosen after phone intent');
   return {
