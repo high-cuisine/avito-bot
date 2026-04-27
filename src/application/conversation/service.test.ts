@@ -146,4 +146,24 @@ describe('conversation service templates', () => {
     expect(reply).toBe('Очень жаль, если у вас поменяется бюджет мы готовы вам помочь. Спасибо.');
     expect(getSession('ch-neg')?.data.chatMode).toBe('phone_backfill');
   });
+
+  it('switches to estimate-only mode when client declines phone', async () => {
+    runLlmTurn.mockResolvedValueOnce({
+      reply: 'Хорошо, рассчитаем без телефона. Укажите маршрут и груз.',
+      newHistoryEntries: [
+        { role: 'assistant', content: 'Хорошо, рассчитаем без телефона. Укажите маршрут и груз.' },
+      ],
+      sessionEnded: false,
+    });
+    const { handleConversation } = await import('./service.js');
+
+    await handleConversation('ch-refuse', 'привет');
+    const reply = await handleConversation('ch-refuse', 'не хочу оставлять номер телефона');
+
+    expect(reply).toBe('Хорошо, рассчитаем без телефона. Укажите маршрут и груз.');
+    expect(runLlmTurn).toHaveBeenCalled();
+    const lastCall = runLlmTurn.mock.calls.at(-1);
+    expect(lastCall?.[2]?.chatMode).toBe('survey_estimate_only');
+    expect(getSession('ch-refuse')?.data.chatMode).toBe('survey_estimate_only');
+  });
 });

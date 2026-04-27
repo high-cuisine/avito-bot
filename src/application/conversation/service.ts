@@ -40,6 +40,26 @@ const LEGACY_STATES = new Set([
   'CONFIRM',
 ]);
 
+const PHONE_REFUSAL_HINTS = [
+  'без номера',
+  'номер не дам',
+  'номер не даю',
+  'не дам номер',
+  'не даю номер',
+  'не хочу номер',
+  'не хочу оставлять номер',
+  'не хочу давать номер',
+  'телефон не дам',
+  'телефон не даю',
+  'без телефона',
+];
+
+function isPhoneRefusalText(text: string): boolean {
+  if (!text) return false;
+  const normalized = text.toLowerCase().replace(/\s+/g, ' ').trim();
+  return PHONE_REFUSAL_HINTS.some((hint) => normalized.includes(hint));
+}
+
 function emptyData(): SessionData {
   return {
     itemId: '',
@@ -196,6 +216,11 @@ export async function handleConversation(
       deleteSession(chatId);
       logger.info({ chatId, phone: earlyPhone, webhook_ok: whOk }, 'Phone-only lead completed');
       return THANKS_CALLBACK_SOON;
+    }
+
+    if (isPhoneRefusalText(text)) {
+      data.chatMode = 'survey_estimate_only';
+      logger.info({ chatId }, 'Client declined phone, switched to estimate-only mode');
     }
   }
 
