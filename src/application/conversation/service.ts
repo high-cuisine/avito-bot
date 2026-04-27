@@ -46,11 +46,15 @@ const PHONE_REFUSAL_HINTS = [
   'номер не даю',
   'не дам номер',
   'не даю номер',
+  'не дам',
+  'не даю',
+  'не буду давать',
   'не хочу номер',
   'не хочу оставлять номер',
   'не хочу давать номер',
   'телефон не дам',
   'телефон не даю',
+  'телефон не буду давать',
   'без телефона',
 ];
 
@@ -222,6 +226,11 @@ export async function handleConversation(
       data.chatMode = 'survey_estimate_only';
       logger.info({ chatId }, 'Client declined phone, switched to estimate-only mode');
     }
+  }
+
+  if (mode === 'survey' && isPhoneRefusalText(text)) {
+    data.chatMode = 'survey_estimate_only';
+    logger.info({ chatId }, 'Client declined phone during survey, switched to estimate-only mode');
   }
 
   if (mode === 'post_quote') {

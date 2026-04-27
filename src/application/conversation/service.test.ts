@@ -166,4 +166,30 @@ describe('conversation service templates', () => {
     expect(lastCall?.[2]?.chatMode).toBe('survey_estimate_only');
     expect(getSession('ch-refuse')?.data.chatMode).toBe('survey_estimate_only');
   });
+
+  it('switches survey mode to estimate-only on short refusal "не дам"', async () => {
+    runLlmTurn.mockResolvedValueOnce({
+      reply: 'Принято, посчитаем без номера. Уточните маршрут, груз, вес, объем и оплату.',
+      newHistoryEntries: [
+        {
+          role: 'assistant',
+          content: 'Принято, посчитаем без номера. Уточните маршрут, груз, вес, объем и оплату.',
+        },
+      ],
+      sessionEnded: false,
+    });
+    saveSession('ch-survey-refuse', 'LLM', {
+      ...LLM_DATA_BASE,
+      chatMode: 'survey',
+      llmMessages: [{ role: 'assistant', content: 'Укажите, пожалуйста, номер телефона.' }],
+    });
+
+    const { handleConversation } = await import('./service.js');
+    const reply = await handleConversation('ch-survey-refuse', 'не дам');
+
+    expect(reply).toBe('Принято, посчитаем без номера. Уточните маршрут, груз, вес, объем и оплату.');
+    const lastCall = runLlmTurn.mock.calls.at(-1);
+    expect(lastCall?.[2]?.chatMode).toBe('survey_estimate_only');
+    expect(getSession('ch-survey-refuse')?.data.chatMode).toBe('survey_estimate_only');
+  });
 });
