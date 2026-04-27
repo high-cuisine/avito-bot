@@ -44,6 +44,12 @@ const TOOL_DECLARE_PHONE_PATH = 'declare_phone_contact_path';
 
 const MAX_STORED_MESSAGES = 40;
 
+function requiredToolByMode(chatMode: LlmContext['chatMode']): string | null {
+  if (chatMode === 'survey') return TOOL_TRANSPORT;
+  if (chatMode === 'survey_estimate_only') return TOOL_CHAT_ESTIMATE;
+  return null;
+}
+
 function transportTool() {
   return {
     type: 'function' as const,
@@ -336,18 +342,32 @@ export async function runLlmTurn(
 
   if (!first?.message) return null;
 
-  const msg1 = first.message;
+  const mustCallTool = requiredToolByMode(ctx.chatMode);
+  let msg1 = first.message;
+
+  // Guardrail: in quote/lead collection modes we should not "finish in text only".
+  // If auto tool selection skipped the write tool, ask the model to produce it explicitly.
+  if (mustCallTool && (!msg1.tool_calls || msg1.tool_calls.length === 0)) {
+    const forced = await callChatCompletions({
+      model: config.openai.model,
+      messages: baseMessages,
+      tools,
+      tool_choice: { type: 'function', function: { name: mustCallTool } },
+      temperature: 0.2,
+      max_tokens: 1200,
+    });
+    if (forced?.message) {
+      msg1 = forced.message;
+    }
+  }
+
   const toolCalls = msg1.tool_calls;
 
   const newHistoryEntries: LlmChatMessage[] = [];
 
   if (!toolCalls || toolCalls.length === 0) {
     const raw = (msg1.content ?? '').trim();
-    const text =
-      raw ||
-      (ctx.chatMode === 'phone_intent'
-        ? 'Напишите номер +7… или 8… для перезвона менеджера. Если номер указать не готовы — напишите об этом.'
-        : 'Напишите, пожалуйста, что вас интересует.');
+    const text = raw || fallbackTextForMode(ctx.chatMode);
     newHistoryEntries.push({ role: 'assistant', content: text });
     return { reply: text, newHistoryEntries, sessionEnded: false };
   }
@@ -427,6 +447,19 @@ export async function runLlmTurn(
     : 'Уточните, пожалуйста, данные ещё раз.';
   newHistoryEntries.push({ role: 'assistant', content: fallback });
   return { reply: fallback, newHistoryEntries, sessionEnded };
+}
+
+function fallbackTextForMode(chatMode: LlmContext['chatMode']): string {
+  if (chatMode === 'phone_intent') {
+    return 'Напишите номер +7… или 8… для перезвона менеджера. Если номер указать не готовы — напишите об этом.';
+  }
+  if (chatMode === 'survey') {
+    return 'Чтобы оформить заявку, пришлите, пожалуйста: маршрут, характер груза, вес, объем, форму оплаты и телефон +7…';
+  }
+  if (chatMode === 'survey_estimate_only') {
+    return 'Чтобы сохранить запрос на расчет, пришлите маршрут, характер груза, вес, объем и форму оплаты.';
+  }
+  return 'Напишите, пожалуйста, что вас интересует.';
 }
 
 export async function classifyPriceReaction(userMessage: string): Promise<PriceReaction> {
