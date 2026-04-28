@@ -5,6 +5,7 @@ import {
   getSession,
   saveClient,
   saveSession,
+  upsertChatEstimateRequest,
   type SessionData,
 } from '../../infrastructure/storage/repository.js';
 
@@ -72,7 +73,7 @@ describe('conversation service templates', () => {
     expect(hours).toBe('Мы работаем в будни с 8-00 до 18-00 по Москве.');
   });
 
-  it('does not replay opening when client already has phone', async () => {
+  it('asks clarifying question when client with saved phone writes again', async () => {
     saveClient({
       chatId: 'ch-engaged',
       itemId: 'it-1',
@@ -82,14 +83,31 @@ describe('conversation service templates', () => {
       paymentMethod: 'наличные',
       phone: '+79000000001',
     });
-    runLlmTurn.mockResolvedValueOnce({
-      reply: 'Свободный ответ LLM',
-      newHistoryEntries: [{ role: 'assistant', content: 'Свободный ответ LLM' }],
-      sessionEnded: false,
-    });
     const { handleConversation } = await import('./service.js');
     const reply = await handleConversation('ch-engaged', 'Расскажите подробнее');
-    expect(reply).toBe('Свободный ответ LLM');
+    expect(reply).toBe(
+      'Спасибо за сообщение. Уточните, пожалуйста, ваш вопрос. Если хотите оформить новую перевозку, напишите маршрут, груз и вес.',
+    );
+  });
+
+  it('keeps estimate-wait context after restart and replies with waiting message', async () => {
+    upsertChatEstimateRequest({
+      chatId: 'ch-est-wait',
+      itemId: 'it-2',
+      clientName: 'Клиент',
+      cargo: 'металл',
+      weight: '2 тонны',
+      volume: 'Не указан',
+      route: 'Ижевск — Воткинск',
+      paymentMethod: 'наличные',
+      details: null,
+    });
+    const { handleConversation } = await import('./service.js');
+    const reply = await handleConversation('ch-est-wait', 'Ждем расчет');
+    expect(reply).toBe(
+      'Ожидайте, пожалуйста: как только расчет цены будет готов, мы сразу ответим вам в этом чате.',
+    );
+    expect(getSession('ch-est-wait')?.data.chatMode).toBe('estimate_wait');
   });
 
   it('post-quote positive -> phone prompt -> thanks -> hours', async () => {

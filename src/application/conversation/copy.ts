@@ -13,6 +13,12 @@ export const POST_QUOTE_PHONE_PROMPT =
 export const POST_QUOTE_NEGATIVE_REPLY =
   'Очень жаль, если у вас поменяется бюджет мы готовы вам помочь. Спасибо.';
 
+export const ESTIMATE_WAITING_REPLY =
+  'Ожидайте, пожалуйста: как только расчет цены будет готов, мы сразу ответим вам в этом чате.';
+
+export const ENGAGED_REOPEN_PROMPT =
+  'Спасибо за сообщение. Уточните, пожалуйста, ваш вопрос. Если хотите оформить новую перевозку, напишите маршрут, груз и вес.';
+
 const CALLBACK_WORDS = /(когда|во\s*сколько|перезвон|позвон|свяж)/i;
 
 export function isWhenCallbackQuestion(text: string): boolean {

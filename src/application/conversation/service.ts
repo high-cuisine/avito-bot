@@ -11,6 +11,8 @@ import { executeSubmitPhoneBackfill } from './execute-submit.js';
 import {
   CALLBACK_HOURS_COLON,
   CALLBACK_HOURS_DASH,
+  ENGAGED_REOPEN_PROMPT,
+  ESTIMATE_WAITING_REPLY,
   PHONE_INTENT_OPENING_REPLY,
   POST_QUOTE_NEGATIVE_REPLY,
   POST_QUOTE_PHONE_PROMPT,
@@ -23,6 +25,7 @@ import {
   saveClient,
   deleteSession,
   getClientByChatId,
+  getChatEstimateByChatId,
   type SessionData,
   type LlmChatMessage,
 } from '../../infrastructure/storage/repository.js';
@@ -161,6 +164,26 @@ export async function handleConversation(
       saveSession(chatId, LLM_STATE, data);
       session = getSession(chatId);
     } else {
+      const existingEstimate = getChatEstimateByChatId(chatId);
+      if (existingEstimate) {
+        const data: SessionData = {
+          ...emptyData(),
+          itemId: existingEstimate.itemId ?? '',
+          clientName: existingEstimate.clientName ?? '',
+          cargo: existingEstimate.cargo ?? '',
+          weight: existingEstimate.weight ?? '',
+          volume: existingEstimate.volume ?? '',
+          route: existingEstimate.route ?? '',
+          paymentMethod: existingEstimate.paymentMethod ?? '',
+          chatMode: 'estimate_wait',
+          llmMessages: [],
+        };
+        saveSession(chatId, LLM_STATE, data);
+        session = getSession(chatId);
+      }
+    }
+
+    if (!session) {
       const { clientName, itemId } = await resolveClientInfo(chatId, chatContext);
       const data: SessionData = {
         ...emptyData(),
@@ -286,6 +309,23 @@ export async function handleConversation(
     appendTurn(data, text, [{ role: 'assistant', content: CALLBACK_HOURS_DASH }]);
     saveSession(chatId, LLM_STATE, data);
     return CALLBACK_HOURS_DASH;
+  }
+
+  if (mode === 'engaged' && !history.some((m) => m.role === 'assistant')) {
+    appendTurn(data, text, [{ role: 'assistant', content: ENGAGED_REOPEN_PROMPT }]);
+    saveSession(chatId, LLM_STATE, data);
+    return ENGAGED_REOPEN_PROMPT;
+  }
+
+  if (mode === 'estimate_wait') {
+    if (isWhenCallbackQuestion(text)) {
+      appendTurn(data, text, [{ role: 'assistant', content: CALLBACK_HOURS_COLON }]);
+      saveSession(chatId, LLM_STATE, data);
+      return CALLBACK_HOURS_COLON;
+    }
+    appendTurn(data, text, [{ role: 'assistant', content: ESTIMATE_WAITING_REPLY }]);
+    saveSession(chatId, LLM_STATE, data);
+    return ESTIMATE_WAITING_REPLY;
   }
 
   const knownPhoneNorm =

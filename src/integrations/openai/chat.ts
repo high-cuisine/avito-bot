@@ -171,6 +171,16 @@ function buildTechnicalInstructions(ctx: LlmContext): string {
     ].join('\n');
   }
 
+  if (ctx.chatMode === 'estimate_wait') {
+    return [
+      `Ты ассистент в мессенджере Авито. Клиент: «${name}».`,
+      item,
+      'Заявка на расчет уже сохранена и передана на обработку. Не собирай заявку заново.',
+      'Сообщи, что как только расчет будет готов, ответ придет в этот чат.',
+      'Общайся коротко и только по-русски.',
+    ].join('\n');
+  }
+
   if (ctx.chatMode === 'post_quote') {
     return [
       `Ты ассистент в мессенджере Авито. Клиент: «${name}».`,
@@ -244,6 +254,7 @@ function toolsForMode(chatMode: LlmContext['chatMode']) {
     case 'survey_estimate_only':
       return [chatEstimateTool()];
     case 'engaged':
+    case 'estimate_wait':
       return [];
     default:
       return [phoneIntentTool()];

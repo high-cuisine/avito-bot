@@ -116,6 +116,7 @@ export interface SessionData {
     | 'survey_estimate_only'
     | 'phone_backfill'
     | 'engaged'
+    | 'estimate_wait'
     | 'post_quote';
   postQuotePhase?: 'awaiting_sentiment' | 'awaiting_phone' | 'phone_captured';
 }
@@ -347,6 +348,10 @@ const stmtGetChatEstimateById = db.prepare(
   `SELECT id, chat_id, item_id, client_name, cargo, weight, volume, route, payment_method, details, created_at
    FROM chat_estimate_requests WHERE id = ?`,
 );
+const stmtGetChatEstimateByChatId = db.prepare(
+  `SELECT id, chat_id, item_id, client_name, cargo, weight, volume, route, payment_method, details, created_at
+   FROM chat_estimate_requests WHERE chat_id = ?`,
+);
 const stmtGetChatEstimatesSince = db.prepare(
   `SELECT id, chat_id, item_id, client_name, cargo, weight, volume, route, payment_method, details, created_at
    FROM chat_estimate_requests WHERE created_at >= ? ORDER BY id ASC`,
@@ -403,6 +408,11 @@ export function getChatEstimates(): ChatEstimateRecord[] {
 
 export function getChatEstimateById(id: number): ChatEstimateRecord | null {
   const row = stmtGetChatEstimateById.get(id) as ChatEstimateRow | undefined;
+  return row ? chatEstimateRowToRecord(row) : null;
+}
+
+export function getChatEstimateByChatId(chatId: string): ChatEstimateRecord | null {
+  const row = stmtGetChatEstimateByChatId.get(chatId) as ChatEstimateRow | undefined;
   return row ? chatEstimateRowToRecord(row) : null;
 }
 
