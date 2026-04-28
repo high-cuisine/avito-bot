@@ -46,6 +46,7 @@ const MAX_STORED_MESSAGES = 40;
 
 function requiredToolByMode(chatMode: LlmContext['chatMode']): string | null {
   if (chatMode === 'survey') return TOOL_TRANSPORT;
+  if (chatMode === 'survey_estimate_only') return TOOL_CHAT_ESTIMATE;
   return null;
 }
 
