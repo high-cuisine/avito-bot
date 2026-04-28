@@ -13,6 +13,7 @@ import {
   CALLBACK_HOURS_DASH,
   ENGAGED_REOPEN_PROMPT,
   ESTIMATE_WAITING_REPLY,
+  ESTIMATE_ONLY_START_PROMPT,
   PHONE_INTENT_OPENING_REPLY,
   POST_QUOTE_NEGATIVE_REPLY,
   POST_QUOTE_PHONE_PROMPT,
@@ -102,6 +103,10 @@ function isEstimateOnlyChoiceText(text: string): boolean {
   if (!text) return false;
   const normalized = text.toLowerCase().replace(/\s+/g, ' ').trim();
   return ESTIMATE_ONLY_HINTS.some((hint) => normalized.includes(hint));
+}
+
+function isWithoutPhoneChoiceText(text: string): boolean {
+  return isPhoneRefusalText(text) || isPriceFirstRequestText(text) || isEstimateOnlyChoiceText(text);
 }
 
 function enforceNoPhoneInEstimateMode(mode: SessionData['chatMode'], reply: string): string {
@@ -251,9 +256,12 @@ export async function handleConversation(
   const history: LlmChatMessage[] = data.llmMessages ?? [];
 
   if (mode === 'phone_intent' && !history.some((m) => m.role === 'assistant')) {
-    if (isPriceFirstRequestText(text) || isEstimateOnlyChoiceText(text) || isPhoneRefusalText(text)) {
+    if (isWithoutPhoneChoiceText(text)) {
       data.chatMode = 'survey_estimate_only';
       logger.info({ chatId }, 'First message is price/estimate request — skipping phone prompt, going to estimate-only');
+      appendTurn(data, text, [{ role: 'assistant', content: ESTIMATE_ONLY_START_PROMPT }]);
+      saveSession(chatId, LLM_STATE, data);
+      return ESTIMATE_ONLY_START_PROMPT;
     } else {
       appendTurn(data, text, [{ role: 'assistant', content: PHONE_INTENT_OPENING_REPLY }]);
       saveSession(chatId, LLM_STATE, data);
@@ -294,18 +302,21 @@ export async function handleConversation(
       return THANKS_CALLBACK_SOON;
     }
 
-    if (isPhoneRefusalText(text) || isPriceFirstRequestText(text) || isEstimateOnlyChoiceText(text)) {
+    if (isWithoutPhoneChoiceText(text)) {
       data.chatMode = 'survey_estimate_only';
       logger.info({ chatId }, 'Client declined phone, switched to estimate-only mode');
+      appendTurn(data, text, [{ role: 'assistant', content: ESTIMATE_ONLY_START_PROMPT }]);
+      saveSession(chatId, LLM_STATE, data);
+      return ESTIMATE_ONLY_START_PROMPT;
     }
   }
 
-  if (
-    mode === 'survey' &&
-    (isPhoneRefusalText(text) || isPriceFirstRequestText(text) || isEstimateOnlyChoiceText(text))
-  ) {
+  if (mode === 'survey' && isWithoutPhoneChoiceText(text)) {
     data.chatMode = 'survey_estimate_only';
     logger.info({ chatId }, 'Client declined phone during survey, switched to estimate-only mode');
+    appendTurn(data, text, [{ role: 'assistant', content: ESTIMATE_ONLY_START_PROMPT }]);
+    saveSession(chatId, LLM_STATE, data);
+    return ESTIMATE_ONLY_START_PROMPT;
   }
 
   if (mode === 'post_quote') {

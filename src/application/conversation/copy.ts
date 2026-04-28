@@ -19,6 +19,9 @@ export const ESTIMATE_WAITING_REPLY =
 export const ENGAGED_REOPEN_PROMPT =
   'Спасибо за сообщение. Уточните, пожалуйста, ваш вопрос. Если хотите оформить новую перевозку, напишите маршрут, груз и вес.';
 
+export const ESTIMATE_ONLY_START_PROMPT =
+  'Хорошо, считаем в чате без номера. Напишите, пожалуйста: маршрут, какой груз, вес и форму оплаты.';
+
 const CALLBACK_WORDS = /(когда|во\s*сколько|перезвон|позвон|свяж)/i;
 
 export function isWhenCallbackQuestion(text: string): boolean {

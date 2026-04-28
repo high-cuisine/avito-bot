@@ -166,54 +166,36 @@ describe('conversation service templates', () => {
   });
 
   it('switches to estimate-only mode when client declines phone', async () => {
-    runLlmTurn.mockResolvedValueOnce({
-      reply: 'Хорошо, рассчитаем без телефона. Укажите маршрут и груз.',
-      newHistoryEntries: [
-        { role: 'assistant', content: 'Хорошо, рассчитаем без телефона. Укажите маршрут и груз.' },
-      ],
-      sessionEnded: false,
-    });
     const { handleConversation } = await import('./service.js');
 
     await handleConversation('ch-refuse', 'привет');
     const reply = await handleConversation('ch-refuse', 'не хочу оставлять номер телефона');
 
-    expect(reply).toBe('Хорошо, рассчитаем без телефона. Укажите маршрут и груз.');
-    expect(runLlmTurn).toHaveBeenCalled();
-    const lastCall = runLlmTurn.mock.calls.at(-1);
-    expect(lastCall?.[2]?.chatMode).toBe('survey_estimate_only');
+    expect(reply).toBe(
+      'Хорошо, считаем в чате без номера. Напишите, пожалуйста: маршрут, какой груз, вес и форму оплаты.',
+    );
+    expect(runLlmTurn).not.toHaveBeenCalled();
     expect(getSession('ch-refuse')?.data.chatMode).toBe('survey_estimate_only');
   });
 
   it('switches to estimate-only mode on price-first request in phone_intent', async () => {
-    runLlmTurn.mockResolvedValueOnce({
-      reply: 'Поняла, считаем без телефона. Укажите маршрут, груз, вес и оплату.',
-      newHistoryEntries: [
-        { role: 'assistant', content: 'Поняла, считаем без телефона. Укажите маршрут, груз, вес и оплату.' },
-      ],
-      sessionEnded: false,
-    });
     const { handleConversation } = await import('./service.js');
     await handleConversation('ch-price-first', 'привет');
     const reply = await handleConversation('ch-price-first', 'посчитайте цену сначала мне');
-    expect(reply).toBe('Поняла, считаем без телефона. Укажите маршрут, груз, вес и оплату.');
-    const lastCall = runLlmTurn.mock.calls.at(-1);
-    expect(lastCall?.[2]?.chatMode).toBe('survey_estimate_only');
+    expect(reply).toBe(
+      'Хорошо, считаем в чате без номера. Напишите, пожалуйста: маршрут, какой груз, вес и форму оплаты.',
+    );
+    expect(runLlmTurn).not.toHaveBeenCalled();
   });
 
   it('switches to estimate-only mode on "второй вариант"', async () => {
-    runLlmTurn.mockResolvedValueOnce({
-      reply: 'Ок, считаем в чате. Дайте маршрут, груз, вес и оплату.',
-      newHistoryEntries: [
-        { role: 'assistant', content: 'Ок, считаем в чате. Дайте маршрут, груз, вес и оплату.' },
-      ],
-      sessionEnded: false,
-    });
     const { handleConversation } = await import('./service.js');
     await handleConversation('ch-second-option', 'привет');
-    await handleConversation('ch-second-option', 'второй вариант');
-    const lastCall = runLlmTurn.mock.calls.at(-1);
-    expect(lastCall?.[2]?.chatMode).toBe('survey_estimate_only');
+    const reply = await handleConversation('ch-second-option', 'второй вариант');
+    expect(reply).toBe(
+      'Хорошо, считаем в чате без номера. Напишите, пожалуйста: маршрут, какой груз, вес и форму оплаты.',
+    );
+    expect(runLlmTurn).not.toHaveBeenCalled();
   });
 
   it('sanitizes accidental phone request in estimate-only reply', async () => {
@@ -233,16 +215,6 @@ describe('conversation service templates', () => {
   });
 
   it('switches survey mode to estimate-only on short refusal "не дам"', async () => {
-    runLlmTurn.mockResolvedValueOnce({
-      reply: 'Принято, посчитаем без номера. Уточните маршрут, груз, вес, объем и оплату.',
-      newHistoryEntries: [
-        {
-          role: 'assistant',
-          content: 'Принято, посчитаем без номера. Уточните маршрут, груз, вес, объем и оплату.',
-        },
-      ],
-      sessionEnded: false,
-    });
     saveSession('ch-survey-refuse', 'LLM', {
       ...LLM_DATA_BASE,
       chatMode: 'survey',
@@ -252,9 +224,10 @@ describe('conversation service templates', () => {
     const { handleConversation } = await import('./service.js');
     const reply = await handleConversation('ch-survey-refuse', 'не дам');
 
-    expect(reply).toBe('Принято, посчитаем без номера. Уточните маршрут, груз, вес, объем и оплату.');
-    const lastCall = runLlmTurn.mock.calls.at(-1);
-    expect(lastCall?.[2]?.chatMode).toBe('survey_estimate_only');
+    expect(reply).toBe(
+      'Хорошо, считаем в чате без номера. Напишите, пожалуйста: маршрут, какой груз, вес и форму оплаты.',
+    );
+    expect(runLlmTurn).not.toHaveBeenCalled();
     expect(getSession('ch-survey-refuse')?.data.chatMode).toBe('survey_estimate_only');
   });
 });
