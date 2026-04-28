@@ -450,7 +450,10 @@ export async function runLlmTurn(
 
   if (!toolCalls || toolCalls.length === 0) {
     const raw = (msg1.content ?? '').trim();
-    const text = raw || fallbackTextForMode(ctx.chatMode);
+    const text =
+      mustCallTool
+        ? fallbackTextForMode(ctx.chatMode)
+        : raw || fallbackTextForMode(ctx.chatMode);
     newHistoryEntries.push({ role: 'assistant', content: text });
     return { reply: text, newHistoryEntries, sessionEnded: false };
   }
@@ -539,6 +542,11 @@ export async function runLlmTurn(
   });
 
   const finalText = (second?.message?.content ?? '').trim();
+  if (mustCallTool && !sessionEnded) {
+    const safeText = firstWriteToolError || fallbackTextForMode(ctx.chatMode);
+    newHistoryEntries.push({ role: 'assistant', content: safeText });
+    return { reply: safeText, newHistoryEntries, sessionEnded: false };
+  }
   if (finalText) {
     newHistoryEntries.push({ role: 'assistant', content: finalText });
     return { reply: finalText, newHistoryEntries, sessionEnded };
