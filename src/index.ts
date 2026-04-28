@@ -1,6 +1,7 @@
 import { config, validateConfig, validateOpenAiConfig } from './core/config.js';
 import { allowlistActive } from './core/allowlist.js';
 import { loadKnowledgeFromDisk } from './core/knowledge.js';
+import { loadSystemPromptsFromDisk } from './core/prompts.js';
 import { logger } from './core/logger.js';
 import { getAccessToken, resolveUserId } from './integrations/avito/client.js';
 
@@ -14,6 +15,7 @@ import { startApiServer } from './interfaces/http/api-server.js';
 async function main(): Promise<void> {
   validateConfig();
   validateOpenAiConfig();
+  loadSystemPromptsFromDisk();
   loadKnowledgeFromDisk();
 
   logger.info('=== Avito Messenger Bot ===');

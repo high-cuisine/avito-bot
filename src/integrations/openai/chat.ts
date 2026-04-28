@@ -1,6 +1,12 @@
 import { config } from '../../core/config.js';
 import { getKnowledgeBundle } from '../../core/knowledge.js';
 import { logger } from '../../core/logger.js';
+import {
+  getBasePrompt,
+  getFirstMessagePrompt,
+  getWithPhoneScenarioBlock,
+  getWithoutPhoneScenarioBlock,
+} from '../../core/prompts.js';
 import type {
   LlmChatMessage,
   LlmToolCall,
@@ -157,100 +163,108 @@ function phoneTool() {
   };
 }
 
-function buildTechnicalInstructions(ctx: LlmContext): string {
-  const name = ctx.clientName || 'клиент';
-  const item = ctx.itemId ? `Объявление Avito (item_id): ${ctx.itemId}.` : '';
+function joinPromptBlocks(parts: string[]): string {
+  return parts
+    .map((p) => p.trim())
+    .filter((p) => p.length > 0)
+    .join('\n\n---\n\n');
+}
 
-  if (ctx.chatMode === 'phone_backfill') {
+/**
+ * post_quote в сессии; в runLlmTurn передаётся как `phone_backfill` — один сценарий.
+ */
+function withPhoneSectionKey(
+  mode: LlmContext['chatMode'],
+): 'survey' | 'phone_backfill' | 'engaged' {
+  if (mode === 'survey') return 'survey';
+  if (mode === 'phone_backfill' || mode === 'post_quote') return 'phone_backfill';
+  if (mode === 'engaged') return 'engaged';
+  return 'phone_backfill';
+}
+
+function buildWithPhoneContextNote(ctx: LlmContext): string {
+  const name = ctx.clientName || 'клиент';
+  const item = ctx.itemId ? `Объявление (item_id): ${ctx.itemId}.` : '';
+  const m = ctx.chatMode;
+
+  if (m === 'survey') {
+    const phoneLine = ctx.knownPhone
+      ? `Контакт уже в заявке: ${ctx.knownPhone} — в **${TOOL_TRANSPORT}** в поле \`phone\` передай тот же или оставь пустым, сервер подставит.`
+      : `В **${TOOL_TRANSPORT}** поле \`phone\`: строго +7 и 10 цифр после, после явного согласия в чате.`;
+    return ['# Контекст (режим: survey)', `Клиент: «${name}».`, item, phoneLine]
+      .filter((x) => x)
+      .join('\n');
+  }
+
+  if (m === 'phone_backfill' || m === 'post_quote') {
     return [
-      `Ты вежливый ассистент в чате Авито. Клиенту «${name}» уже оформлена заявка.`,
+      '# Контекст (режим: phone_backfill — заявка или расчёт в чате, при необходимости дозапрос контакта в чате)',
+      `Клиент: «${name}».`,
       item,
       `Уже известно: груз — ${ctx.knownCargo || '—'}; вес — ${ctx.knownWeight || '—'}; объём — ${ctx.knownVolume || '—'}; маршрут — ${ctx.knownRoute || '—'}; оплата — ${ctx.knownPayment || '—'}.`,
-      'Мягко запроси телефон в РФ (+7… или 8…), переспроси подтверждение.',
-      `Когда клиент явно подтвердил номер — вызови инструмент **${TOOL_PHONE}** с полем phone в формате +7XXXXXXXXXX.`,
-      'До этого момента общайся обычным текстом в сообщениях (без вызова инструмента).',
-      'Общайся только по-русски, коротко.',
-    ].join('\n');
+      `Когда контакт для связи согласован в чате в формате +7 — вызови **${TOOL_PHONE}** с \`phone\` в формате +7 и 10 цифр после. До подтверждения — только текст.`,
+    ]
+      .filter((x) => x)
+      .join('\n');
   }
 
-  if (ctx.chatMode === 'engaged') {
+  if (m === 'engaged') {
     return [
-      `Ты ассистент в мессенджере Авито. Клиент: «${name}».`,
+      '# Контекст (режим: engaged — контакт в заявке, ответы по вопросам / новая перевозка кратко)',
+      `Клиент: «${name}».`,
       item,
-      'Телефон клиента уже есть в заявке. Не проси телефон заново и не отправляй шаблон первого приветствия.',
-      'Отвечай по сути вопроса клиента и по базе знаний. Коротко и по-русски.',
-    ].join('\n');
+    ]
+      .filter((x) => x)
+      .join('\n');
   }
 
+  return [item, `Клиент: «${name}».`].filter((x) => x).join('\n');
+}
+
+function buildWithoutPhoneContextNote(ctx: LlmContext): string {
+  const name = ctx.clientName || 'клиент';
+  const item = ctx.itemId ? `Объявление (item_id): ${ctx.itemId}.` : '';
   if (ctx.chatMode === 'estimate_wait') {
     return [
-      `Ты ассистент в мессенджере Авито. Клиент: «${name}».`,
+      '# Контекст (режим: estimate_wait — заявка на расчёт в работе)',
+      `Клиент: «${name}».`,
       item,
-      'Заявка на расчет уже сохранена и передана на обработку. Не собирай заявку заново.',
-      'Сообщи, что как только расчет будет готов, ответ придет в этот чат.',
-      'Общайся коротко и только по-русски.',
-    ].join('\n');
+      'Ответ с оценкой придёт в этот чат, как будет готово. Не начинай с нуля полный опрос, если клиент не просит уточнения/доп. данные.',
+    ]
+      .filter((x) => x)
+      .join('\n');
   }
-
-  if (ctx.chatMode === 'post_quote') {
-    return [
-      `Ты ассистент в мессенджере Авито. Клиент: «${name}».`,
-      item,
-      'Клиент получил цену в чате. Не повторяй шаблон первого приветствия.',
-      'Если клиент явно готов оставить номер для звонка — мягко собери и подтверди телефон; затем вызови submit_phone_backfill.',
-      'Если клиент не готов обсуждать номер — продолжай вежливый диалог по сути.',
-      'Общайся только по-русски.',
-    ].join('\n');
-  }
-
-  if (ctx.chatMode === 'phone_intent') {
-    return [
-      `Ты ассистент в мессенджере Авито. Клиент: «${name}».`,
-      item,
-      'Первое сообщение клиенту с приветствием и просьбой телефона **уже отправлено автоматически** (не дублируй его целиком). Дальше веди диалог по ответу клиента.',
-      'Уточняй выбор: готов **назвать телефон** для перезвона менеджера **или** **отказывается** — тогда предложи расчёт по параметрам в чате без телефона на входе. Без пустых «чем могу помочь» вместо сути.',
-      'Не повторяй длинное вступление и самопрезентацию («Я Анна…») на каждом шаге. После первого хода пиши коротко и по делу.',
-      'Если клиент отвечает кратко по контексту (например: «нет», «неа», «не хочу», «в чате», «да в чате», «второй вариант», «без номера») — интерпретируй это как выбор сценария без телефона и действуй дальше, не зацикливай вопрос.',
-      'Если клиент **согласен** дать телефон в чате (или прислал номер) — после явного согласия вызови **' +
-        TOOL_DECLARE_PHONE_PATH +
-        '** с `willing_to_share_phone: true`.',
-      'Если **отказывается** от телефона — не дави; предложи расчёт по параметрам в чате без номера на входе; когда явно согласен на этот вариант — вызови **' +
-        TOOL_DECLARE_PHONE_PATH +
-        '** с `willing_to_share_phone: false`.',
-      'Вопрос «Как вам удобнее?» задавай максимум один раз. Если после него ответ неочевидный — один короткий уточняющий вопрос с двумя вариантами, без повтора всего текста.',
-      'Пока выбор неясен — только текст, без инструментов.',
-      'Общайся только по-русски.',
-    ].join('\n');
-  }
-
-  if (ctx.chatMode === 'survey_estimate_only') {
-    return [
-      `Ты ассистент в мессенджере Авито. Клиент: «${name}».`,
-      item,
-      'Клиент **не** оставляет телефон; ведёшь **второй сценарий**: расчёт по параметрам в чате.',
-      '**ЗАПРЕЩЕНО** просить номер телефона — ни разу, ни под каким предлогом. Этот расчёт не требует телефона.',
-      'Если клиент задает общий или нецелевой вопрос — ответь коротко по сути и мягко верни диалог к сбору недостающих параметров для расчета.',
-      'Собери отдельно маршрут, характер груза, вес, объём, форму оплаты, все уточнения в поле **details** (габариты, даты и т.д.); сводка и явное подтверждение.',
-      `После подтверждения вызови **${TOOL_CHAT_ESTIMATE}** один раз.`,
-      'Не повторяй один и тот же вопрос, если клиент уже дал поле. Переходи только к недостающим параметрам.',
-      'До подтверждённой сводки — только текст. Общайся только по-русски.',
-    ].join('\n');
-  }
-
-  // survey — стандартная заявка с телефоном
-  const phoneNote = ctx.knownPhone
-    ? `Телефон **уже сохранён** в заявке: ${ctx.knownPhone}. **Не** проси номер заново; в **${TOOL_TRANSPORT}** в поле phone передай тот же номер или оставь пустым — сервер подставит сохранённый. Собери маршрут, характер груза, вес, объём, оплату и сводку.`
-    : 'Собери отдельно маршрут, характер груза, вес, объём, оплату и телефон; сводка и явное подтверждение. Телефон в аргументах инструмента — строго +7 и 10 цифр после.';
-
   return [
-    `Ты ассистент в мессенджере Авито. Клиент: «${name}».`,
+    '# Контекст (режим: survey_estimate_only — расчёт в чате, без сбора контакта на входе)',
+    `Клиент: «${name}».`,
     item,
-    'Клиент в **стандартном** сценарии с телефоном для перезвона менеджера.',
-    phoneNote,
-    `После подтверждения сводки вызови **${TOOL_TRANSPORT}** один раз.`,
-    'До подтверждённой сводки — только текст. Другие инструменты в этом режиме недоступны.',
-    'Общайся только по-русски.',
-  ].join('\n');
+  ]
+    .filter((x) => x)
+    .join('\n');
+}
+
+/**
+ * Собирает системный промпт из avito/prompts (обособленные блоки) + база знаний, где уместно.
+ * Экспортируется для unit-тестов на изоляцию веток.
+ */
+export function buildSystemPrompt(ctx: LlmContext): string {
+  const base = getBasePrompt().trim();
+  if (ctx.chatMode === 'phone_intent') {
+    return joinPromptBlocks([base, getFirstMessagePrompt().trim()]);
+  }
+  if (ctx.chatMode === 'survey_estimate_only' || ctx.chatMode === 'estimate_wait') {
+    return joinPromptBlocks([base, getWithoutPhoneScenarioBlock(ctx.chatMode), buildWithoutPhoneContextNote(ctx)]);
+  }
+
+  const knowledge = getKnowledgeBundle().trim();
+  const section = withPhoneSectionKey(ctx.chatMode);
+  const scenario = getWithPhoneScenarioBlock(section);
+  const note = buildWithPhoneContextNote(ctx);
+  if (!knowledge) {
+    logger.warn('Knowledge bundle empty; with-phone turn runs without product MD');
+    return joinPromptBlocks([base, scenario, note]);
+  }
+  return joinPromptBlocks([base, knowledge, scenario, note]);
 }
 
 function toolsForMode(chatMode: LlmContext['chatMode']) {
@@ -271,16 +285,6 @@ function toolsForMode(chatMode: LlmContext['chatMode']) {
     default:
       return [phoneIntentTool()];
   }
-}
-
-function buildSystemPrompt(ctx: LlmContext): string {
-  const technical = buildTechnicalInstructions(ctx);
-  if (ctx.chatMode === 'survey_estimate_only' || ctx.chatMode === 'estimate_wait') {
-    return technical;
-  }
-  const knowledge = getKnowledgeBundle().trim();
-  if (!knowledge) return technical;
-  return `${knowledge}\n\n---\n\n# Служебные правила диалога и инструменты\n\n${technical}`;
 }
 
 function trimHistory(messages: LlmChatMessage[]): LlmChatMessage[] {

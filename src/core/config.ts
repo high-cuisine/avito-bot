@@ -37,6 +37,8 @@ export interface Config {
   openai: OpenAiConfig;
   /** Каталог с `.md` файлами базы знаний (роль, товар, политики). */
   knowledgeDir: string;
+  /** Каталог с `.md` системными блоками (база, первое сообщение, with/without_phone). */
+  promptsDir: string;
   /**
    * Если задан хотя бы один список — бот отвечает только подходящим чатам/пользователям.
    * ID через запятую. Пусто с обеих сторон — без ограничения (как раньше).
@@ -72,6 +74,7 @@ export const config: Config = {
     baseUrl: (process.env.OPENAI_BASE_URL ?? 'https://api.openai.com/v1').replace(/\/$/, ''),
   },
   knowledgeDir: path.resolve(process.env.KNOWLEDGE_DIR ?? path.join(process.cwd(), 'knowledge')),
+  promptsDir: path.resolve(process.env.PROMPTS_DIR ?? path.join(process.cwd(), 'prompts')),
   allowlistChatIds: parseIdList(process.env.ALLOWLIST_CHAT_IDS),
   allowlistUserIds: parseIdList(process.env.ALLOWLIST_USER_IDS),
   submitWebhookUrl: (process.env.SUBMIT_WEBHOOK_URL ?? '').trim(),
