@@ -259,8 +259,82 @@ function trimHistory(messages: LlmChatMessage[]): LlmChatMessage[] {
 
 type ApiMsg = Record<string, unknown>;
 
+function sanitizeToolCalls(raw: unknown): LlmToolCall[] {
+  if (!Array.isArray(raw)) return [];
+  const out: LlmToolCall[] = [];
+  for (const t of raw) {
+    if (!t || typeof t !== 'object') continue;
+    const r = t as Record<string, unknown>;
+    const id = typeof r.id === 'string' ? r.id : '';
+    const type = r.type === 'function' ? 'function' : null;
+    const fn = r.function;
+    if (!id || !type || !fn || typeof fn !== 'object') continue;
+    const f = fn as Record<string, unknown>;
+    const name = typeof f.name === 'string' ? f.name : '';
+    if (!name) continue;
+    const argsRaw = f.arguments;
+    const args =
+      typeof argsRaw === 'string'
+        ? argsRaw
+        : argsRaw === undefined
+          ? '{}'
+          : (() => {
+              try {
+                return JSON.stringify(argsRaw);
+              } catch {
+                return '{}';
+              }
+            })();
+    out.push({
+      id,
+      type: 'function',
+      function: { name, arguments: args },
+    });
+  }
+  return out;
+}
+
+function sanitizeStoredHistory(stored: LlmChatMessage[]): LlmChatMessage[] {
+  const out: LlmChatMessage[] = [];
+  const pendingToolCalls = new Set<string>();
+  for (const m of stored) {
+    if (!m || typeof m !== 'object') continue;
+
+    if (m.role === 'user') {
+      const content = typeof m.content === 'string' ? m.content : '';
+      if (content.trim()) out.push({ role: 'user', content });
+      continue;
+    }
+
+    if (m.role === 'assistant') {
+      const content = typeof m.content === 'string' ? m.content : '';
+      const toolCalls = sanitizeToolCalls((m as { tool_calls?: unknown }).tool_calls);
+      if (toolCalls.length > 0) {
+        for (const tc of toolCalls) pendingToolCalls.add(tc.id);
+        out.push({
+          role: 'assistant',
+          content: content.trim() ? content : '',
+          tool_calls: toolCalls,
+        });
+      } else if (content.trim()) {
+        out.push({ role: 'assistant', content });
+      }
+      continue;
+    }
+
+    if (m.role === 'tool') {
+      const toolCallId = typeof m.tool_call_id === 'string' ? m.tool_call_id : '';
+      const content = typeof m.content === 'string' ? m.content : '';
+      if (!toolCallId || !pendingToolCalls.has(toolCallId) || !content.trim()) continue;
+      pendingToolCalls.delete(toolCallId);
+      out.push({ role: 'tool', tool_call_id: toolCallId, content });
+    }
+  }
+  return out;
+}
+
 function toApiMessages(stored: LlmChatMessage[]): ApiMsg[] {
-  return stored.map((m) => {
+  return sanitizeStoredHistory(stored).map((m) => {
     if (m.role === 'tool') {
       return { role: 'tool', tool_call_id: m.tool_call_id, content: m.content };
     }
@@ -280,6 +354,15 @@ type ChoiceMessage = {
   content?: string | null;
   tool_calls?: LlmToolCall[];
 };
+
+function parseToolMessage(toolContent: string): string | null {
+  try {
+    const parsed = JSON.parse(toolContent) as { message?: unknown };
+    return typeof parsed.message === 'string' && parsed.message.trim() ? parsed.message : null;
+  } catch {
+    return null;
+  }
+}
 
 async function callChatCompletions(body: Record<string, unknown>): Promise<{
   message: ChoiceMessage | null;
@@ -352,7 +435,7 @@ export async function runLlmTurn(
       model: config.openai.model,
       messages: baseMessages,
       tools,
-      tool_choice: { type: 'function', function: { name: mustCallTool } },
+      tool_choice: 'required',
       temperature: 0.2,
       max_tokens: 1200,
     });
@@ -382,6 +465,8 @@ export async function runLlmTurn(
   const followMessages: ApiMsg[] = [...baseMessages, toApiMessages([assistantWithTools])[0]];
 
   let sessionEnded = false;
+  let writeToolAttempted = false;
+  let firstWriteToolError: string | null = null;
 
   for (const tc of toolCalls) {
     if (tc.type !== 'function') continue;
@@ -398,6 +483,7 @@ export async function runLlmTurn(
       const exec = await executeDeclarePhoneContactPath(ctx.chatId, args);
       toolContent = exec.toolContent;
     } else if (name === TOOL_TRANSPORT && ctx.chatMode === 'survey') {
+      writeToolAttempted = true;
       const exec = await executeSubmitTransportLead(
         ctx.chatId,
         { itemId: ctx.itemId, clientName: ctx.clientName },
@@ -405,7 +491,11 @@ export async function runLlmTurn(
       );
       toolContent = exec.toolContent;
       if (exec.persisted && exec.ok) sessionEnded = true;
+      if (!exec.ok && !firstWriteToolError) {
+        firstWriteToolError = parseToolMessage(exec.toolContent);
+      }
     } else if (name === TOOL_CHAT_ESTIMATE && ctx.chatMode === 'survey_estimate_only') {
+      writeToolAttempted = true;
       const exec = await executeSubmitChatEstimateRequest(
         ctx.chatId,
         { itemId: ctx.itemId, clientName: ctx.clientName },
@@ -413,10 +503,17 @@ export async function runLlmTurn(
       );
       toolContent = exec.toolContent;
       if (exec.persisted && exec.ok) sessionEnded = true;
+      if (!exec.ok && !firstWriteToolError) {
+        firstWriteToolError = parseToolMessage(exec.toolContent);
+      }
     } else if (name === TOOL_PHONE && ctx.chatMode === 'phone_backfill') {
+      writeToolAttempted = true;
       const exec = await executeSubmitPhoneBackfill(ctx.chatId, args);
       toolContent = exec.toolContent;
       if (exec.persisted && exec.ok) sessionEnded = true;
+      if (!exec.ok && !firstWriteToolError) {
+        firstWriteToolError = parseToolMessage(exec.toolContent);
+      }
     } else {
       toolContent = JSON.stringify({
         ok: false,
@@ -427,6 +524,11 @@ export async function runLlmTurn(
     const toolMsg: LlmChatMessage = { role: 'tool', tool_call_id: tc.id, content: toolContent };
     newHistoryEntries.push(toolMsg);
     followMessages.push({ role: 'tool', tool_call_id: tc.id, content: toolContent });
+  }
+
+  if (writeToolAttempted && !sessionEnded && firstWriteToolError) {
+    newHistoryEntries.push({ role: 'assistant', content: firstWriteToolError });
+    return { reply: firstWriteToolError, newHistoryEntries, sessionEnded: false };
   }
 
   const second = await callChatCompletions({

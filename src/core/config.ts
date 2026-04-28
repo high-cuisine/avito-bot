@@ -68,7 +68,7 @@ export const config: Config = {
   },
   openai: {
     apiKey: process.env.OPENAI_API_KEY ?? '',
-    model: process.env.OPENAI_MODEL ?? 'gpt-4o-mini',
+    model: process.env.OPENAI_MODEL ?? 'gpt-4.1-mini',
     baseUrl: (process.env.OPENAI_BASE_URL ?? 'https://api.openai.com/v1').replace(/\/$/, ''),
   },
   knowledgeDir: path.resolve(process.env.KNOWLEDGE_DIR ?? path.join(process.cwd(), 'knowledge')),
