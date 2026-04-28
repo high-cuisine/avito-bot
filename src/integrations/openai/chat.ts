@@ -640,6 +640,16 @@ export async function runLlmTurn(
       }
     : null;
 
+  // Жесткий ответ для второго сценария:
+  // после успешного submit_chat_estimate_request не даем модели второй ход,
+  // чтобы она не могла снова попросить телефон до публикации цены в чате.
+  if (ctx.chatMode === 'survey_estimate_only' && sessionEnded && !needsRecoveryPrompt) {
+    const doneText =
+      'Спасибо! Параметры для расчета сохранены. Как только расчет будет готов, мы ответим в этом чате.';
+    newHistoryEntries.push({ role: 'assistant', content: doneText });
+    return { reply: doneText, newHistoryEntries, sessionEnded: true };
+  }
+
   const second = await callChatCompletions({
     model: config.openai.model,
     messages: recoveryInstruction ? [...followMessages, recoveryInstruction] : followMessages,
