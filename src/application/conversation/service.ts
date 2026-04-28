@@ -251,9 +251,14 @@ export async function handleConversation(
   const history: LlmChatMessage[] = data.llmMessages ?? [];
 
   if (mode === 'phone_intent' && !history.some((m) => m.role === 'assistant')) {
-    appendTurn(data, text, [{ role: 'assistant', content: PHONE_INTENT_OPENING_REPLY }]);
-    saveSession(chatId, LLM_STATE, data);
-    return PHONE_INTENT_OPENING_REPLY;
+    if (isPriceFirstRequestText(text) || isEstimateOnlyChoiceText(text) || isPhoneRefusalText(text)) {
+      data.chatMode = 'survey_estimate_only';
+      logger.info({ chatId }, 'First message is price/estimate request — skipping phone prompt, going to estimate-only');
+    } else {
+      appendTurn(data, text, [{ role: 'assistant', content: PHONE_INTENT_OPENING_REPLY }]);
+      saveSession(chatId, LLM_STATE, data);
+      return PHONE_INTENT_OPENING_REPLY;
+    }
   }
 
   if (mode === 'phone_intent' && history.some((m) => m.role === 'assistant')) {
