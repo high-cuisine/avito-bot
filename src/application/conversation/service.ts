@@ -61,10 +61,29 @@ const PHONE_REFUSAL_HINTS = [
   'без телефона',
 ];
 
+const PRICE_FIRST_HINTS = [
+  'посчитайте цену',
+  'рассчитайте цену',
+  'расчет цены',
+  'сначала цену',
+  'цену сначала',
+  'цена сначала',
+  'хочу сначала цену',
+  'сначала хочу цену',
+  'посчитать цену в чате',
+  'расчет в чате',
+];
+
 function isPhoneRefusalText(text: string): boolean {
   if (!text) return false;
   const normalized = text.toLowerCase().replace(/\s+/g, ' ').trim();
   return PHONE_REFUSAL_HINTS.some((hint) => normalized.includes(hint));
+}
+
+function isPriceFirstRequestText(text: string): boolean {
+  if (!text) return false;
+  const normalized = text.toLowerCase().replace(/\s+/g, ' ').trim();
+  return PRICE_FIRST_HINTS.some((hint) => normalized.includes(hint));
 }
 
 function emptyData(): SessionData {
@@ -245,13 +264,13 @@ export async function handleConversation(
       return THANKS_CALLBACK_SOON;
     }
 
-    if (isPhoneRefusalText(text)) {
+    if (isPhoneRefusalText(text) || isPriceFirstRequestText(text)) {
       data.chatMode = 'survey_estimate_only';
       logger.info({ chatId }, 'Client declined phone, switched to estimate-only mode');
     }
   }
 
-  if (mode === 'survey' && isPhoneRefusalText(text)) {
+  if (mode === 'survey' && (isPhoneRefusalText(text) || isPriceFirstRequestText(text))) {
     data.chatMode = 'survey_estimate_only';
     logger.info({ chatId }, 'Client declined phone during survey, switched to estimate-only mode');
   }

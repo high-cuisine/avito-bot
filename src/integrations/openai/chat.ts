@@ -218,6 +218,7 @@ function buildTechnicalInstructions(ctx: LlmContext): string {
       item,
       'Клиент **не** оставляет телефон; ведёшь **второй сценарий**: расчёт по параметрам в чате.',
       '**ЗАПРЕЩЕНО** просить номер телефона — ни разу, ни под каким предлогом. Этот расчёт не требует телефона.',
+      'Если клиент задает общий или нецелевой вопрос — ответь коротко по сути и мягко верни диалог к сбору недостающих параметров для расчета.',
       'Собери отдельно маршрут, характер груза, вес, объём, форму оплаты, все уточнения в поле **details** (габариты, даты и т.д.); сводка и явное подтверждение.',
       `После подтверждения вызови **${TOOL_CHAT_ESTIMATE}** один раз.`,
       'Не повторяй один и тот же вопрос, если клиент уже дал поле. Переходи только к недостающим параметрам.',
@@ -262,8 +263,11 @@ function toolsForMode(chatMode: LlmContext['chatMode']) {
 }
 
 function buildSystemPrompt(ctx: LlmContext): string {
-  const knowledge = getKnowledgeBundle().trim();
   const technical = buildTechnicalInstructions(ctx);
+  if (ctx.chatMode === 'survey_estimate_only' || ctx.chatMode === 'estimate_wait') {
+    return technical;
+  }
+  const knowledge = getKnowledgeBundle().trim();
   if (!knowledge) return technical;
   return `${knowledge}\n\n---\n\n# Служебные правила диалога и инструменты\n\n${technical}`;
 }

@@ -185,6 +185,22 @@ describe('conversation service templates', () => {
     expect(getSession('ch-refuse')?.data.chatMode).toBe('survey_estimate_only');
   });
 
+  it('switches to estimate-only mode on price-first request in phone_intent', async () => {
+    runLlmTurn.mockResolvedValueOnce({
+      reply: 'Поняла, считаем без телефона. Укажите маршрут, груз, вес и оплату.',
+      newHistoryEntries: [
+        { role: 'assistant', content: 'Поняла, считаем без телефона. Укажите маршрут, груз, вес и оплату.' },
+      ],
+      sessionEnded: false,
+    });
+    const { handleConversation } = await import('./service.js');
+    await handleConversation('ch-price-first', 'привет');
+    const reply = await handleConversation('ch-price-first', 'посчитайте цену сначала мне');
+    expect(reply).toBe('Поняла, считаем без телефона. Укажите маршрут, груз, вес и оплату.');
+    const lastCall = runLlmTurn.mock.calls.at(-1);
+    expect(lastCall?.[2]?.chatMode).toBe('survey_estimate_only');
+  });
+
   it('switches survey mode to estimate-only on short refusal "не дам"', async () => {
     runLlmTurn.mockResolvedValueOnce({
       reply: 'Принято, посчитаем без номера. Уточните маршрут, груз, вес, объем и оплату.',
