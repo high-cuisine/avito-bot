@@ -589,7 +589,17 @@ export async function runLlmTurn(
     );
   }
 
-  const needsRecoveryPrompt = writeToolAttempted && !sessionEnded;
+  const needsRecoveryPrompt = mustCallTool !== null && !sessionEnded;
+  if (mustCallTool && !writeToolAttempted && !sessionEnded) {
+    logger.warn(
+      {
+        chatId: ctx.chatId,
+        mode: ctx.chatMode,
+        requiredTool: mustCallTool,
+      },
+      'Required write tool was not executed',
+    );
+  }
   const recoveryInstruction = needsRecoveryPrompt
     ? {
         role: 'system' as const,
