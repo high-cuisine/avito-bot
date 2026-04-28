@@ -609,6 +609,78 @@ export async function runLlmTurn(
     followMessages.push({ role: 'tool', tool_call_id: tc.id, content: toolContent });
   }
 
+  // Safety net for `survey_estimate_only`:
+  // if first pass didn't persist the chat estimate, force one more tool-only pass
+  // so we don't end up with "передаю в расчет" without a DB record.
+  if (ctx.chatMode === 'survey_estimate_only' && !sessionEnded) {
+    const salvage = await callChatCompletions({
+      model: config.openai.model,
+      messages: [
+        ...followMessages,
+        {
+          role: 'system',
+          content:
+            'СЕЙЧАС НУЖНО ОБЯЗАТЕЛЬНО вызвать инструмент submit_chat_estimate_request один раз. ' +
+            'Никакого обычного текста. Если данных недостаточно — передай то, что уже есть, и заполни details недостающими уточнениями.',
+        },
+      ],
+      tools: [chatEstimateTool()],
+      tool_choice: 'required',
+      temperature: 0,
+      max_tokens: 700,
+    });
+
+    const salvageCalls = salvage?.message?.tool_calls;
+    if (salvageCalls && salvageCalls.length > 0) {
+      const salvageAssistant: LlmChatMessage = {
+        role: 'assistant',
+        content: (salvage.message?.content ?? '').trim(),
+        tool_calls: salvageCalls,
+      };
+      newHistoryEntries.push(salvageAssistant);
+      followMessages.push(toApiMessages([salvageAssistant])[0]);
+
+      for (const tc of salvageCalls) {
+        if (tc.type !== 'function') continue;
+        if (tc.function?.name !== TOOL_CHAT_ESTIMATE) continue;
+        let args: unknown;
+        try {
+          args = JSON.parse(tc.function.arguments || '{}');
+        } catch {
+          args = {};
+        }
+
+        writeToolAttempted = true;
+        const exec = await executeSubmitChatEstimateRequest(
+          ctx.chatId,
+          { itemId: ctx.itemId, clientName: ctx.clientName },
+          args,
+        );
+        const toolContent = exec.toolContent;
+        logger.info(
+          {
+            chatId: ctx.chatId,
+            tool: tc.function?.name,
+            mode: ctx.chatMode,
+            args,
+            ok: exec.ok,
+            persisted: exec.persisted,
+            salvage: true,
+          },
+          'Chat-estimate salvage write attempt',
+        );
+        if (exec.persisted && exec.ok) sessionEnded = true;
+        if (!exec.ok && !firstWriteToolError) {
+          firstWriteToolError = parseToolMessage(exec.toolContent);
+        }
+
+        const toolMsg: LlmChatMessage = { role: 'tool', tool_call_id: tc.id, content: toolContent };
+        newHistoryEntries.push(toolMsg);
+        followMessages.push({ role: 'tool', tool_call_id: tc.id, content: toolContent });
+      }
+    }
+  }
+
   if (writeToolAttempted && !sessionEnded && firstWriteToolError) {
     logger.warn(
       {
