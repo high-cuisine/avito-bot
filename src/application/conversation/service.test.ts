@@ -201,6 +201,37 @@ describe('conversation service templates', () => {
     expect(lastCall?.[2]?.chatMode).toBe('survey_estimate_only');
   });
 
+  it('switches to estimate-only mode on "второй вариант"', async () => {
+    runLlmTurn.mockResolvedValueOnce({
+      reply: 'Ок, считаем в чате. Дайте маршрут, груз, вес и оплату.',
+      newHistoryEntries: [
+        { role: 'assistant', content: 'Ок, считаем в чате. Дайте маршрут, груз, вес и оплату.' },
+      ],
+      sessionEnded: false,
+    });
+    const { handleConversation } = await import('./service.js');
+    await handleConversation('ch-second-option', 'привет');
+    await handleConversation('ch-second-option', 'второй вариант');
+    const lastCall = runLlmTurn.mock.calls.at(-1);
+    expect(lastCall?.[2]?.chatMode).toBe('survey_estimate_only');
+  });
+
+  it('sanitizes accidental phone request in estimate-only reply', async () => {
+    runLlmTurn.mockResolvedValueOnce({
+      reply: 'Пожалуйста, напишите номер телефона +7XXXXXXXXXX.',
+      newHistoryEntries: [{ role: 'assistant', content: 'Пожалуйста, напишите номер телефона +7XXXXXXXXXX.' }],
+      sessionEnded: false,
+    });
+    saveSession('ch-est-no-phone', 'LLM', {
+      ...LLM_DATA_BASE,
+      chatMode: 'survey_estimate_only',
+      llmMessages: [{ role: 'assistant', content: 'Давайте соберем данные для расчета в чате.' }],
+    });
+    const { handleConversation } = await import('./service.js');
+    const reply = await handleConversation('ch-est-no-phone', 'маршрут спб москва');
+    expect(reply).toContain('номер телефона не нужен');
+  });
+
   it('switches survey mode to estimate-only on short refusal "не дам"', async () => {
     runLlmTurn.mockResolvedValueOnce({
       reply: 'Принято, посчитаем без номера. Уточните маршрут, груз, вес, объем и оплату.',

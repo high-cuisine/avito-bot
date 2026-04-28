@@ -74,6 +74,18 @@ const PRICE_FIRST_HINTS = [
   'расчет в чате',
 ];
 
+const ESTIMATE_ONLY_HINTS = [
+  'второй вариант',
+  'да в чате',
+  'в чате',
+  'без звонка',
+  'без номера',
+  'без телефона',
+];
+
+const PHONE_REQUEST_PATTERN =
+  /(напиш|укаж|пришл|остав(ь|ьте)).{0,40}(номер|телефон)|(номер|телефон).{0,40}(\+7|8\d{10})/i;
+
 function isPhoneRefusalText(text: string): boolean {
   if (!text) return false;
   const normalized = text.toLowerCase().replace(/\s+/g, ' ').trim();
@@ -84,6 +96,19 @@ function isPriceFirstRequestText(text: string): boolean {
   if (!text) return false;
   const normalized = text.toLowerCase().replace(/\s+/g, ' ').trim();
   return PRICE_FIRST_HINTS.some((hint) => normalized.includes(hint));
+}
+
+function isEstimateOnlyChoiceText(text: string): boolean {
+  if (!text) return false;
+  const normalized = text.toLowerCase().replace(/\s+/g, ' ').trim();
+  return ESTIMATE_ONLY_HINTS.some((hint) => normalized.includes(hint));
+}
+
+function enforceNoPhoneInEstimateMode(mode: SessionData['chatMode'], reply: string): string {
+  if ((mode === 'survey_estimate_only' || mode === 'estimate_wait') && PHONE_REQUEST_PATTERN.test(reply)) {
+    return 'Принято. В этом сценарии номер телефона не нужен. Продолжаем расчет в чате: уточните недостающие параметры (маршрут, груз, вес, оплата), и я передам заявку логисту.';
+  }
+  return reply;
 }
 
 function emptyData(): SessionData {
@@ -264,13 +289,16 @@ export async function handleConversation(
       return THANKS_CALLBACK_SOON;
     }
 
-    if (isPhoneRefusalText(text) || isPriceFirstRequestText(text)) {
+    if (isPhoneRefusalText(text) || isPriceFirstRequestText(text) || isEstimateOnlyChoiceText(text)) {
       data.chatMode = 'survey_estimate_only';
       logger.info({ chatId }, 'Client declined phone, switched to estimate-only mode');
     }
   }
 
-  if (mode === 'survey' && (isPhoneRefusalText(text) || isPriceFirstRequestText(text))) {
+  if (
+    mode === 'survey' &&
+    (isPhoneRefusalText(text) || isPriceFirstRequestText(text) || isEstimateOnlyChoiceText(text))
+  ) {
     data.chatMode = 'survey_estimate_only';
     logger.info({ chatId }, 'Client declined phone during survey, switched to estimate-only mode');
   }
@@ -381,5 +409,6 @@ export async function handleConversation(
     saveSession(chatId, LLM_STATE, data);
   }
 
-  return result.reply;
+  const finalMode = data.chatMode ?? llmMode;
+  return enforceNoPhoneInEstimateMode(finalMode, result.reply);
 }
