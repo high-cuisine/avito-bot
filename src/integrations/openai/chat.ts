@@ -43,11 +43,22 @@ const TOOL_CHAT_ESTIMATE = 'submit_chat_estimate_request';
 const TOOL_DECLARE_PHONE_PATH = 'declare_phone_contact_path';
 
 const MAX_STORED_MESSAGES = 40;
+const PHONE_REQUEST_RE = /(напиш|укаж|пришл|остав(ь|ьте)).{0,50}(номер|телефон)|(номер|телефон).{0,50}(\+7|8\d{10})/i;
 
 function requiredToolByMode(chatMode: LlmContext['chatMode']): string | null {
   if (chatMode === 'survey') return TOOL_TRANSPORT;
   if (chatMode === 'survey_estimate_only') return TOOL_CHAT_ESTIMATE;
   return null;
+}
+
+function sanitizeNoPhoneModeReply(chatMode: LlmContext['chatMode'], reply: string): string {
+  if (
+    (chatMode === 'survey_estimate_only' || chatMode === 'estimate_wait') &&
+    PHONE_REQUEST_RE.test(reply)
+  ) {
+    return 'Принято. В этом сценарии номер телефона не нужен. Продолжаем расчет в чате: уточните недостающие параметры (маршрут, груз, вес, оплата), и я передам заявку логисту.';
+  }
+  return reply;
 }
 
 function transportTool() {
@@ -470,10 +481,11 @@ export async function runLlmTurn(
 
   if (!toolCalls || toolCalls.length === 0) {
     const raw = (msg1.content ?? '').trim();
-    const text =
+    const textRaw =
       mustCallTool
         ? fallbackTextForMode(ctx.chatMode)
         : raw || fallbackTextForMode(ctx.chatMode);
+    const text = sanitizeNoPhoneModeReply(ctx.chatMode, textRaw);
     newHistoryEntries.push({ role: 'assistant', content: text });
     return { reply: text, newHistoryEntries, sessionEnded: false };
   }
@@ -633,18 +645,21 @@ export async function runLlmTurn(
 
   const finalText = (second?.message?.content ?? '').trim();
   if (needsRecoveryPrompt) {
-    const safeText = finalText || firstWriteToolError || fallbackTextForMode(ctx.chatMode);
+    const safeTextRaw = finalText || firstWriteToolError || fallbackTextForMode(ctx.chatMode);
+    const safeText = sanitizeNoPhoneModeReply(ctx.chatMode, safeTextRaw);
     newHistoryEntries.push({ role: 'assistant', content: safeText });
     return { reply: safeText, newHistoryEntries, sessionEnded: false };
   }
   if (finalText) {
-    newHistoryEntries.push({ role: 'assistant', content: finalText });
-    return { reply: finalText, newHistoryEntries, sessionEnded };
+    const sanitized = sanitizeNoPhoneModeReply(ctx.chatMode, finalText);
+    newHistoryEntries.push({ role: 'assistant', content: sanitized });
+    return { reply: sanitized, newHistoryEntries, sessionEnded };
   }
 
-  const fallback = sessionEnded
+  const fallbackRaw = sessionEnded
     ? 'Спасибо! Данные переданы, с вами свяжется логист.'
     : 'Уточните, пожалуйста, данные ещё раз.';
+  const fallback = sanitizeNoPhoneModeReply(ctx.chatMode, fallbackRaw);
   newHistoryEntries.push({ role: 'assistant', content: fallback });
   return { reply: fallback, newHistoryEntries, sessionEnded };
 }
