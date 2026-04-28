@@ -99,6 +99,25 @@ describe('execute-submit', () => {
     expect(getChatEstimates().some((e) => e.chatId === 'c-est')).toBe(true);
   });
 
+  it('executeSubmitChatEstimateRequest persists when volume is missing', async () => {
+    const { executeSubmitChatEstimateRequest } = await import('./execute-submit.js');
+    const r = await executeSubmitChatEstimateRequest(
+      'c-est-no-volume',
+      { itemId: 'it3', clientName: 'Олег' },
+      {
+        cargo: 'стекло',
+        route: 'СПб — Москва',
+        weight: '2 тонны',
+        payment_method: 'наличные',
+      },
+    );
+    expect(r.ok).toBe(true);
+    const { getChatEstimates } = await import('../../infrastructure/storage/repository.js');
+    const row = getChatEstimates().find((e) => e.chatId === 'c-est-no-volume');
+    expect(row).toBeTruthy();
+    expect(row?.volume).toBe('Не указан');
+  });
+
   it('executeSubmitChatEstimateRequest rejects missing fields', async () => {
     const { executeSubmitChatEstimateRequest } = await import('./execute-submit.js');
     const r = await executeSubmitChatEstimateRequest(

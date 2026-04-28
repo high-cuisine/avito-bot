@@ -150,17 +150,18 @@ export async function executeSubmitChatEstimateRequest(
   const cargo = String(a.cargo ?? '').trim();
   const route = String(a.route ?? '').trim();
   const weight = String(a.weight ?? '').trim();
-  const volume = String(a.volume ?? '').trim();
+  const volumeRaw = String(a.volume ?? '').trim();
+  const volume = volumeRaw || 'Не указан';
   const payment_method = String(a.payment_method ?? a.paymentMethod ?? '').trim();
   const client_name = String(a.client_name ?? a.clientName ?? sessionDefaults.clientName ?? '').trim();
   const detailsRaw = a.details ?? a.extra_details;
   const details =
     detailsRaw !== undefined && detailsRaw !== null ? String(detailsRaw).trim() || null : null;
 
-  if (!cargo || !route || !weight || !volume || !payment_method) {
+  if (!cargo || !route || !weight || !payment_method) {
     return {
       ok: false,
-      toolContent: toolJson(false, 'Заполните маршрут, характер груза, вес, объём и форму оплаты'),
+      toolContent: toolJson(false, 'Заполните маршрут, характер груза, вес и форму оплаты'),
       persisted: false,
     };
   }

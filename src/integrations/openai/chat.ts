@@ -99,7 +99,7 @@ function chatEstimateTool() {
               'Все дополнительные уточнения для расчёта: габариты, даты, особенности погрузки и т.п.',
           },
         },
-        required: ['cargo', 'route', 'weight', 'volume', 'payment_method'],
+        required: ['cargo', 'route', 'weight', 'payment_method'],
       },
     },
   };
@@ -485,6 +485,17 @@ export async function runLlmTurn(
     if (name === TOOL_DECLARE_PHONE_PATH && ctx.chatMode === 'phone_intent') {
       const exec = await executeDeclarePhoneContactPath(ctx.chatId, args);
       toolContent = exec.toolContent;
+      logger.info(
+        {
+          chatId: ctx.chatId,
+          tool: name,
+          mode: ctx.chatMode,
+          args,
+          ok: exec.ok,
+          persisted: exec.persisted,
+        },
+        'Tool execution result',
+      );
     } else if (name === TOOL_TRANSPORT && ctx.chatMode === 'survey') {
       writeToolAttempted = true;
       const exec = await executeSubmitTransportLead(
@@ -493,6 +504,17 @@ export async function runLlmTurn(
         args,
       );
       toolContent = exec.toolContent;
+      logger.info(
+        {
+          chatId: ctx.chatId,
+          tool: name,
+          mode: ctx.chatMode,
+          args,
+          ok: exec.ok,
+          persisted: exec.persisted,
+        },
+        'Lead write attempt',
+      );
       if (exec.persisted && exec.ok) sessionEnded = true;
       if (!exec.ok && !firstWriteToolError) {
         firstWriteToolError = parseToolMessage(exec.toolContent);
@@ -505,6 +527,17 @@ export async function runLlmTurn(
         args,
       );
       toolContent = exec.toolContent;
+      logger.info(
+        {
+          chatId: ctx.chatId,
+          tool: name,
+          mode: ctx.chatMode,
+          args,
+          ok: exec.ok,
+          persisted: exec.persisted,
+        },
+        'Chat-estimate write attempt',
+      );
       if (exec.persisted && exec.ok) sessionEnded = true;
       if (!exec.ok && !firstWriteToolError) {
         firstWriteToolError = parseToolMessage(exec.toolContent);
@@ -513,6 +546,17 @@ export async function runLlmTurn(
       writeToolAttempted = true;
       const exec = await executeSubmitPhoneBackfill(ctx.chatId, args);
       toolContent = exec.toolContent;
+      logger.info(
+        {
+          chatId: ctx.chatId,
+          tool: name,
+          mode: ctx.chatMode,
+          args,
+          ok: exec.ok,
+          persisted: exec.persisted,
+        },
+        'Phone backfill write attempt',
+      );
       if (exec.persisted && exec.ok) sessionEnded = true;
       if (!exec.ok && !firstWriteToolError) {
         firstWriteToolError = parseToolMessage(exec.toolContent);
@@ -530,20 +574,36 @@ export async function runLlmTurn(
   }
 
   if (writeToolAttempted && !sessionEnded && firstWriteToolError) {
-    newHistoryEntries.push({ role: 'assistant', content: firstWriteToolError });
-    return { reply: firstWriteToolError, newHistoryEntries, sessionEnded: false };
+    logger.warn(
+      {
+        chatId: ctx.chatId,
+        mode: ctx.chatMode,
+        error: firstWriteToolError,
+      },
+      'Write tool failed, asking client for missing data',
+    );
   }
+
+  const needsRecoveryPrompt = writeToolAttempted && !sessionEnded;
+  const recoveryInstruction = needsRecoveryPrompt
+    ? {
+        role: 'system' as const,
+        content:
+          `Инструмент сохранения заявки вернул ошибку: ${firstWriteToolError || 'не удалось сохранить данные'}. ` +
+          'НЕЛЬЗЯ писать, что данные переданы логисту или сохранены. Коротко попроси недостающие данные и объясни, что нужно уточнить.',
+      }
+    : null;
 
   const second = await callChatCompletions({
     model: config.openai.model,
-    messages: followMessages,
+    messages: recoveryInstruction ? [...followMessages, recoveryInstruction] : followMessages,
     temperature: 0.45,
     max_tokens: 600,
   });
 
   const finalText = (second?.message?.content ?? '').trim();
-  if (mustCallTool && !sessionEnded) {
-    const safeText = firstWriteToolError || fallbackTextForMode(ctx.chatMode);
+  if (needsRecoveryPrompt) {
+    const safeText = finalText || firstWriteToolError || fallbackTextForMode(ctx.chatMode);
     newHistoryEntries.push({ role: 'assistant', content: safeText });
     return { reply: safeText, newHistoryEntries, sessionEnded: false };
   }
