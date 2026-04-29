@@ -101,7 +101,7 @@ function chatEstimateTool() {
     function: {
       name: TOOL_CHAT_ESTIMATE,
       description:
-        'В режиме «расчёт без телефона»: один раз после сводки и явного подтверждения клиента. Сохраняет параметры для расчёта в чате, без полной заявки с телефоном.',
+        'В режиме «расчёт без телефона»: один раз после сводки и явного подтверждения клиента. Сохраняет параметры для расчёта в чате, без полной заявки с телефоном. Сервер валидирует полноту: при ошибке вернёт JSON с полем message — передай клиенту недостающее по этому тексту.',
       parameters: {
         type: 'object',
         properties: {
@@ -612,7 +612,7 @@ export async function runLlmTurn(
   // Safety net for `survey_estimate_only`:
   // if first pass didn't persist the chat estimate, force one more tool-only pass
   // so we don't end up with "передаю в расчет" without a DB record.
-  if (ctx.chatMode === 'survey_estimate_only' && !sessionEnded) {
+  if (ctx.chatMode === 'survey_estimate_only' && !sessionEnded && !writeToolAttempted) {
     const salvage = await callChatCompletions({
       model: config.openai.model,
       messages: [

@@ -1,3 +1,4 @@
+import { validateChatEstimateFields } from '../../core/chat-estimate-validation.js';
 import { normalizePhone } from '../../core/phone.js';
 import { logger } from '../../core/logger.js';
 import { postSubmitWebhook } from '../../integrations/webhook/submit-lead.js';
@@ -158,10 +159,14 @@ export async function executeSubmitChatEstimateRequest(
   const details =
     detailsRaw !== undefined && detailsRaw !== null ? String(detailsRaw).trim() || null : null;
 
-  if (!cargo || !route || !weight || !payment_method) {
+  const validation = validateChatEstimateFields({ route, cargo, weight, payment_method });
+  if (!validation.ok) {
     return {
       ok: false,
-      toolContent: toolJson(false, 'Заполните маршрут, характер груза, вес и форму оплаты'),
+      toolContent: toolJson(false, validation.message, {
+        missing: validation.missing,
+        vague: validation.vague,
+      }),
       persisted: false,
     };
   }
