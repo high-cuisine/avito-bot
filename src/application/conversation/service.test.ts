@@ -172,7 +172,7 @@ describe('conversation service templates', () => {
     const reply = await handleConversation('ch-refuse', 'не хочу оставлять номер телефона');
 
     expect(reply).toBe(
-      'Хорошо, считаем в чате без номера. Напишите, пожалуйста: маршрут, какой груз, вес и форму оплаты.',
+      'Хорошо, считаем в чате без номера. Напишите, пожалуйста: маршрут, какой груз, вес, форму оплаты и сколько примерно в метрах займет Ваш груз в кузове у нас по полу.',
     );
     expect(runLlmTurn).not.toHaveBeenCalled();
     expect(getSession('ch-refuse')?.data.chatMode).toBe('survey_estimate_only');
@@ -183,7 +183,7 @@ describe('conversation service templates', () => {
     await handleConversation('ch-price-first', 'привет');
     const reply = await handleConversation('ch-price-first', 'посчитайте цену сначала мне');
     expect(reply).toBe(
-      'Хорошо, считаем в чате без номера. Напишите, пожалуйста: маршрут, какой груз, вес и форму оплаты.',
+      'Хорошо, считаем в чате без номера. Напишите, пожалуйста: маршрут, какой груз, вес, форму оплаты и сколько примерно в метрах займет Ваш груз в кузове у нас по полу.',
     );
     expect(runLlmTurn).not.toHaveBeenCalled();
   });
@@ -193,7 +193,7 @@ describe('conversation service templates', () => {
     await handleConversation('ch-second-option', 'привет');
     const reply = await handleConversation('ch-second-option', 'второй вариант');
     expect(reply).toBe(
-      'Хорошо, считаем в чате без номера. Напишите, пожалуйста: маршрут, какой груз, вес и форму оплаты.',
+      'Хорошо, считаем в чате без номера. Напишите, пожалуйста: маршрут, какой груз, вес, форму оплаты и сколько примерно в метрах займет Ваш груз в кузове у нас по полу.',
     );
     expect(runLlmTurn).not.toHaveBeenCalled();
   });
@@ -225,7 +225,7 @@ describe('conversation service templates', () => {
     const reply = await handleConversation('ch-survey-refuse', 'не дам');
 
     expect(reply).toBe(
-      'Хорошо, считаем в чате без номера. Напишите, пожалуйста: маршрут, какой груз, вес и форму оплаты.',
+      'Хорошо, считаем в чате без номера. Напишите, пожалуйста: маршрут, какой груз, вес, форму оплаты и сколько примерно в метрах займет Ваш груз в кузове у нас по полу.',
     );
     expect(runLlmTurn).not.toHaveBeenCalled();
     expect(getSession('ch-survey-refuse')?.data.chatMode).toBe('survey_estimate_only');

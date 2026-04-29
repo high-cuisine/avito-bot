@@ -598,10 +598,20 @@ export async function runLlmTurn(
         firstWriteToolError = parseToolMessage(exec.toolContent);
       }
     } else {
+      logger.warn(
+        {
+          chatId: ctx.chatId,
+          mode: ctx.chatMode,
+          requestedTool: name || null,
+          allowedTools: tools.map((t) => t.function.name),
+        },
+        'Tool call rejected: tool is unavailable in this mode',
+      );
       toolContent = JSON.stringify({
         ok: false,
         message: 'Этот инструмент здесь недоступен.',
       });
+      if (!firstWriteToolError) firstWriteToolError = 'Этот инструмент здесь недоступен.';
     }
 
     const toolMsg: LlmChatMessage = { role: 'tool', tool_call_id: tc.id, content: toolContent };
@@ -731,6 +741,13 @@ export async function runLlmTurn(
 
   const finalText = (second?.message?.content ?? '').trim();
   if (needsRecoveryPrompt) {
+    if (ctx.chatMode === 'survey_estimate_only') {
+      const deterministic =
+        'Не удалось сохранить запрос на расчет. Уточните, пожалуйста: маршрут, характер груза, вес, форму оплаты и сколько примерно в метрах займет груз по полу в кузове.';
+      const safeDeterministic = sanitizeNoPhoneModeReply(ctx.chatMode, deterministic);
+      newHistoryEntries.push({ role: 'assistant', content: safeDeterministic });
+      return { reply: safeDeterministic, newHistoryEntries, sessionEnded: false };
+    }
     const safeTextRaw = finalText || firstWriteToolError || fallbackTextForMode(ctx.chatMode);
     const safeText = sanitizeNoPhoneModeReply(ctx.chatMode, safeTextRaw);
     newHistoryEntries.push({ role: 'assistant', content: safeText });
