@@ -45,6 +45,15 @@ const LLM_DATA_BASE: SessionData = {
   llmMessages: [],
 };
 
+const ESTIMATE_ONLY_PROMPT =
+  'Хорошо, считаем в чате без номера. Напишите, пожалуйста: \n' +
+  '1.Маршрут (откуда куда везем)\n' +
+  '2.Характер груз\n' +
+  '3.Вес\n' +
+  '4.Объем\n' +
+  '5.Форму оплаты(наличные,безнал б/ндс, безнал с НДС)\n' +
+  '6.Сколько примерно в метрах займет Ваш груз в кузове у нас по длине пола(при ширине кузова 2.4 метра)';
+
 describe('conversation service templates', () => {
   beforeEach(() => {
     clearDatabaseForTests();
@@ -57,7 +66,7 @@ describe('conversation service templates', () => {
   it('uses strict opening and phone-only thank you', async () => {
     const { handleConversation } = await import('./service.js');
     const opening = await handleConversation('ch-1', 'привет');
-    expect(opening).toBe('Здравствуйте. Напишите свой номер телефона, свяжемся с вами.');
+    expect(opening).toBe('Здравствуйте. Напишите свой номер телефона, свяжемся с Вами и обсудим детали грузоперевозки.');
 
     const thanks = await handleConversation('ch-1', '+79000000000');
     expect(thanks).toBe('Спасибо, мы перезвоним вам в ближайшее время.');
@@ -171,9 +180,7 @@ describe('conversation service templates', () => {
     await handleConversation('ch-refuse', 'привет');
     const reply = await handleConversation('ch-refuse', 'не хочу оставлять номер телефона');
 
-    expect(reply).toBe(
-      'Хорошо, считаем в чате без номера. Напишите, пожалуйста: маршрут, какой груз, вес, форму оплаты и сколько примерно в метрах займет Ваш груз в кузове у нас по полу.',
-    );
+    expect(reply).toBe(ESTIMATE_ONLY_PROMPT);
     expect(runLlmTurn).not.toHaveBeenCalled();
     expect(getSession('ch-refuse')?.data.chatMode).toBe('survey_estimate_only');
   });
@@ -182,9 +189,7 @@ describe('conversation service templates', () => {
     const { handleConversation } = await import('./service.js');
     await handleConversation('ch-price-first', 'привет');
     const reply = await handleConversation('ch-price-first', 'посчитайте цену сначала мне');
-    expect(reply).toBe(
-      'Хорошо, считаем в чате без номера. Напишите, пожалуйста: маршрут, какой груз, вес, форму оплаты и сколько примерно в метрах займет Ваш груз в кузове у нас по полу.',
-    );
+    expect(reply).toBe(ESTIMATE_ONLY_PROMPT);
     expect(runLlmTurn).not.toHaveBeenCalled();
   });
 
@@ -192,9 +197,7 @@ describe('conversation service templates', () => {
     const { handleConversation } = await import('./service.js');
     await handleConversation('ch-second-option', 'привет');
     const reply = await handleConversation('ch-second-option', 'второй вариант');
-    expect(reply).toBe(
-      'Хорошо, считаем в чате без номера. Напишите, пожалуйста: маршрут, какой груз, вес, форму оплаты и сколько примерно в метрах займет Ваш груз в кузове у нас по полу.',
-    );
+    expect(reply).toBe(ESTIMATE_ONLY_PROMPT);
     expect(runLlmTurn).not.toHaveBeenCalled();
   });
 
@@ -224,9 +227,7 @@ describe('conversation service templates', () => {
     const { handleConversation } = await import('./service.js');
     const reply = await handleConversation('ch-survey-refuse', 'не дам');
 
-    expect(reply).toBe(
-      'Хорошо, считаем в чате без номера. Напишите, пожалуйста: маршрут, какой груз, вес, форму оплаты и сколько примерно в метрах займет Ваш груз в кузове у нас по полу.',
-    );
+    expect(reply).toBe(ESTIMATE_ONLY_PROMPT);
     expect(runLlmTurn).not.toHaveBeenCalled();
     expect(getSession('ch-survey-refuse')?.data.chatMode).toBe('survey_estimate_only');
   });
