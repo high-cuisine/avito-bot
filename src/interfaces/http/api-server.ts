@@ -12,6 +12,11 @@ import {
   getChatEstimateById,
   getChatEstimatesSince,
   deleteChatEstimateRequest,
+  addTelegramAllowedUser,
+  getRuntimeMode,
+  getTelegramAllowedUsers,
+  removeTelegramAllowedUser,
+  setRuntimeMode,
 } from '../../infrastructure/storage/repository.js';
 
 // ─── OpenAPI spec ─────────────────────────────────────────────────────────────
@@ -220,6 +225,21 @@ const swaggerDocument = {
           error: { type: 'string', example: 'Не авторизован' },
         },
         required: ['error'],
+      },
+      RuntimeMode: {
+        type: 'object',
+        properties: {
+          mode: { type: 'string', enum: ['test', 'prod'], example: 'test' },
+        },
+        required: ['mode'],
+      },
+      TelegramAllowedUsers: {
+        type: 'object',
+        properties: {
+          total: { type: 'integer', example: 2 },
+          items: { type: 'array', items: { type: 'string', example: '123456789' } },
+        },
+        required: ['total', 'items'],
       },
     },
   },
@@ -517,6 +537,141 @@ const swaggerDocument = {
         },
       },
     },
+    '/runtime-mode': {
+      get: {
+        summary: 'Текущий runtime-режим бота',
+        operationId: 'getRuntimeMode',
+        tags: ['Управление'],
+        responses: {
+          '200': {
+            description: 'Успешно',
+            content: {
+              'application/json': { schema: { $ref: '#/components/schemas/RuntimeMode' } },
+            },
+          },
+        },
+      },
+      put: {
+        summary: 'Переключить runtime-режим бота',
+        operationId: 'setRuntimeMode',
+        tags: ['Управление'],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                properties: {
+                  mode: { type: 'string', enum: ['test', 'prod'], example: 'prod' },
+                },
+                required: ['mode'],
+              },
+            },
+          },
+        },
+        responses: {
+          '200': {
+            description: 'Режим обновлен',
+            content: {
+              'application/json': { schema: { $ref: '#/components/schemas/RuntimeMode' } },
+            },
+          },
+          '400': {
+            description: 'Некорректный режим',
+            content: {
+              'application/json': { schema: { $ref: '#/components/schemas/Error' } },
+            },
+          },
+        },
+      },
+    },
+    '/telegram/allowed-users': {
+      get: {
+        summary: 'Список разрешенных Telegram user_id',
+        operationId: 'getTelegramAllowedUsers',
+        tags: ['Управление'],
+        responses: {
+          '200': {
+            description: 'Успешно',
+            content: {
+              'application/json': { schema: { $ref: '#/components/schemas/TelegramAllowedUsers' } },
+            },
+          },
+        },
+      },
+      post: {
+        summary: 'Добавить разрешенного Telegram пользователя',
+        operationId: 'addTelegramAllowedUser',
+        tags: ['Управление'],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                properties: { userId: { type: 'string', example: '123456789' } },
+                required: ['userId'],
+              },
+            },
+          },
+        },
+        responses: {
+          '200': {
+            description: 'Пользователь добавлен',
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  properties: { ok: { type: 'boolean', example: true } },
+                  required: ['ok'],
+                },
+              },
+            },
+          },
+          '400': {
+            description: 'Некорректный userId',
+            content: {
+              'application/json': { schema: { $ref: '#/components/schemas/Error' } },
+            },
+          },
+        },
+      },
+    },
+    '/telegram/allowed-users/{userId}': {
+      delete: {
+        summary: 'Удалить Telegram пользователя из списка доступа',
+        operationId: 'removeTelegramAllowedUser',
+        tags: ['Управление'],
+        parameters: [
+          {
+            name: 'userId',
+            in: 'path',
+            required: true,
+            schema: { type: 'string', example: '123456789' },
+          },
+        ],
+        responses: {
+          '200': {
+            description: 'Удалено',
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  properties: { ok: { type: 'boolean', example: true } },
+                  required: ['ok'],
+                },
+              },
+            },
+          },
+          '404': {
+            description: 'Пользователь не найден',
+            content: {
+              'application/json': { schema: { $ref: '#/components/schemas/Error' } },
+            },
+          },
+        },
+      },
+    },
   },
 };
 
@@ -653,6 +808,53 @@ export function createApiApp(): express.Application {
       }
       const result = await deliverQuoteFromChatEstimateId(id, req.body);
       res.status(result.status).json(result.body);
+    },
+  );
+
+  app.get('/api/v1/runtime-mode', requireAuth, (_req: Request, res: Response) => {
+    res.json({ mode: getRuntimeMode() });
+  });
+
+  app.put('/api/v1/runtime-mode', requireAuth, (req: Request, res: Response) => {
+    const modeRaw = String(req.body?.mode ?? '').trim();
+    if (modeRaw !== 'test' && modeRaw !== 'prod') {
+      res.status(400).json({ error: 'mode должен быть test или prod' });
+      return;
+    }
+    const mode = setRuntimeMode(modeRaw);
+    res.json({ mode });
+  });
+
+  app.get('/api/v1/telegram/allowed-users', requireAuth, (_req: Request, res: Response) => {
+    const items = getTelegramAllowedUsers();
+    res.json({ total: items.length, items });
+  });
+
+  app.post('/api/v1/telegram/allowed-users', requireAuth, (req: Request, res: Response) => {
+    const userId = String(req.body?.userId ?? '').trim();
+    if (!userId) {
+      res.status(400).json({ error: 'userId обязателен' });
+      return;
+    }
+    addTelegramAllowedUser(userId);
+    res.json({ ok: true });
+  });
+
+  app.delete(
+    '/api/v1/telegram/allowed-users/:userId',
+    requireAuth,
+    (req: Request, res: Response) => {
+      const userId = String(req.params.userId ?? '').trim();
+      if (!userId) {
+        res.status(400).json({ error: 'userId обязателен' });
+        return;
+      }
+      const removed = removeTelegramAllowedUser(userId);
+      if (!removed) {
+        res.status(404).json({ error: 'Пользователь не найден' });
+        return;
+      }
+      res.json({ ok: true });
     },
   );
 

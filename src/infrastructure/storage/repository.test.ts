@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import {
+  addTelegramAllowedUser,
   clearDatabaseForTests,
   deleteChatEstimateRequest,
   deleteClient,
@@ -10,8 +11,13 @@ import {
   getClientByChatId,
   getClientById,
   getClientsSince,
+  getRuntimeMode,
+  getTelegramAllowedUsers,
+  isTelegramUserAllowed,
+  removeTelegramAllowedUser,
   saveClient,
   saveSession,
+  setRuntimeMode,
   upsertChatEstimateRequest,
 } from './repository.js';
 
@@ -115,5 +121,26 @@ describe('repository', () => {
     expect(rows.length).toBe(0);
     const rows2 = getClientsSince('2000-01-01');
     expect(rows2.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('stores runtime mode in database', () => {
+    expect(getRuntimeMode()).toBe('test');
+    expect(setRuntimeMode('prod')).toBe('prod');
+    expect(getRuntimeMode()).toBe('prod');
+    expect(setRuntimeMode('test')).toBe('test');
+  });
+
+  it('manages telegram allowed users', () => {
+    expect(getTelegramAllowedUsers()).toEqual([]);
+    expect(isTelegramUserAllowed('123')).toBe(false);
+
+    addTelegramAllowedUser('123');
+    addTelegramAllowedUser('456');
+
+    expect(getTelegramAllowedUsers()).toEqual(['123', '456']);
+    expect(isTelegramUserAllowed('123')).toBe(true);
+    expect(removeTelegramAllowedUser('123')).toBe(true);
+    expect(isTelegramUserAllowed('123')).toBe(false);
+    expect(removeTelegramAllowedUser('999')).toBe(false);
   });
 });

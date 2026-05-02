@@ -175,4 +175,46 @@ describe('createApiApp', () => {
 
     expect(res.status).toBe(409);
   });
+
+  it('runtime mode endpoints work', async () => {
+    const { createApiApp } = await import('./api-server.js');
+    const app = createApiApp();
+
+    const initial = await request(app)
+      .get('/api/v1/runtime-mode')
+      .set('Authorization', `Bearer ${API_TOKEN}`);
+    expect(initial.status).toBe(200);
+    expect(initial.body.mode).toBe('test');
+
+    const updated = await request(app)
+      .put('/api/v1/runtime-mode')
+      .set('Authorization', `Bearer ${API_TOKEN}`)
+      .send({ mode: 'prod' });
+    expect(updated.status).toBe(200);
+    expect(updated.body.mode).toBe('prod');
+  });
+
+  it('telegram allowed users endpoints work', async () => {
+    const { createApiApp } = await import('./api-server.js');
+    const app = createApiApp();
+
+    const add = await request(app)
+      .post('/api/v1/telegram/allowed-users')
+      .set('Authorization', `Bearer ${API_TOKEN}`)
+      .send({ userId: '111' });
+    expect(add.status).toBe(200);
+    expect(add.body.ok).toBe(true);
+
+    const list = await request(app)
+      .get('/api/v1/telegram/allowed-users')
+      .set('Authorization', `Bearer ${API_TOKEN}`);
+    expect(list.status).toBe(200);
+    expect(list.body).toEqual({ total: 1, items: ['111'] });
+
+    const del = await request(app)
+      .delete('/api/v1/telegram/allowed-users/111')
+      .set('Authorization', `Bearer ${API_TOKEN}`);
+    expect(del.status).toBe(200);
+    expect(del.body.ok).toBe(true);
+  });
 });

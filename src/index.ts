@@ -11,6 +11,7 @@ import './application/messaging/handlers.js';
 import { startPolling } from './application/messaging/poller.js';
 import { startWebhookServer } from './interfaces/http/webhook-server.js';
 import { startApiServer } from './interfaces/http/api-server.js';
+import { startTelegramControlBot } from './integrations/telegram/control-bot.js';
 
 async function main(): Promise<void> {
   validateConfig();
@@ -33,6 +34,8 @@ async function main(): Promise<void> {
 
   // Always start the 1C API server
   startApiServer();
+  // Optional Telegram bot for switching runtime mode
+  startTelegramControlBot();
 
   if (config.mode === 'webhook') {
     await startWebhookServer();
