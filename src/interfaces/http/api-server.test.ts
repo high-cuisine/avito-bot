@@ -194,27 +194,39 @@ describe('createApiApp', () => {
     expect(updated.body.mode).toBe('prod');
   });
 
-  it('telegram allowed users endpoints work', async () => {
+  it('admin panel login and runtime switch', async () => {
     const { createApiApp } = await import('./api-server.js');
     const app = createApiApp();
 
-    const add = await request(app)
-      .post('/api/v1/telegram/allowed-users')
-      .set('Authorization', `Bearer ${API_TOKEN}`)
-      .send({ userId: '111' });
-    expect(add.status).toBe(200);
-    expect(add.body.ok).toBe(true);
+    const gate = await request(app).get('/admin');
+    expect(gate.status).toBe(200);
+    expect(gate.text).toContain('Админка');
 
-    const list = await request(app)
-      .get('/api/v1/telegram/allowed-users')
-      .set('Authorization', `Bearer ${API_TOKEN}`);
-    expect(list.status).toBe(200);
-    expect(list.body).toEqual({ total: 1, items: ['111'] });
+    const bad = await request(app)
+      .post('/admin/login')
+      .type('form')
+      .send({ login: 'testadmin', password: 'wrong' });
+    expect(bad.status).toBe(401);
 
-    const del = await request(app)
-      .delete('/api/v1/telegram/allowed-users/111')
-      .set('Authorization', `Bearer ${API_TOKEN}`);
-    expect(del.status).toBe(200);
-    expect(del.body.ok).toBe(true);
+    const login = await request(app)
+      .post('/admin/login')
+      .type('form')
+      .send({ login: 'testadmin', password: 'test-admin-pass' });
+    expect(login.status).toBe(302);
+    expect(login.headers.location).toBe('/admin');
+    const cookieHeader = login.headers['set-cookie'];
+    expect(cookieHeader).toBeDefined();
+
+    const dash = await request(app).get('/admin').set('Cookie', cookieHeader!);
+    expect(dash.status).toBe(200);
+    expect(dash.text).toContain('TEST');
+
+    const switchProd = await request(app)
+      .post('/admin/runtime')
+      .type('form')
+      .set('Cookie', cookieHeader!)
+      .send({ mode: 'prod' });
+    expect(switchProd.status).toBe(200);
+    expect(switchProd.text).toContain('PROD');
   });
 });

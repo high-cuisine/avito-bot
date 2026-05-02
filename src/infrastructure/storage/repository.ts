@@ -74,12 +74,7 @@ db.exec(`
   );
 `);
 
-db.exec(`
-  CREATE TABLE IF NOT EXISTS telegram_allowed_users (
-    user_id    TEXT PRIMARY KEY,
-    added_at   TEXT NOT NULL DEFAULT (datetime('now'))
-  );
-`);
+db.exec(`DROP TABLE IF EXISTS telegram_allowed_users`);
 try {
   db.exec('ALTER TABLE chat_estimate_requests ADD COLUMN weight TEXT');
 } catch {
@@ -246,30 +241,6 @@ const stmtEnsureRuntimeMode = db.prepare(`
   VALUES ('runtime_mode', 'test', datetime('now'))
   ON CONFLICT(key) DO NOTHING
 `);
-const stmtGetTelegramAllowedUsers = db.prepare(
-  `SELECT user_id FROM telegram_allowed_users ORDER BY added_at ASC`,
-);
-const stmtIsTelegramUserAllowed = db.prepare(
-  `SELECT user_id FROM telegram_allowed_users WHERE user_id = ?`,
-);
-const stmtAddTelegramAllowedUser = db.prepare(`
-  INSERT INTO telegram_allowed_users (user_id, added_at)
-  VALUES (?, datetime('now'))
-  ON CONFLICT(user_id) DO NOTHING
-`);
-const stmtDeleteTelegramAllowedUser = db.prepare(
-  `DELETE FROM telegram_allowed_users WHERE user_id = ?`,
-);
-
-/** Встроенные TG user_id с доступом к control-боту (INSERT OR IGNORE при старте). */
-const DEFAULT_TELEGRAM_BOT_ALLOWED_IDS: readonly string[] = ['1042650482'];
-
-function ensureDefaultTelegramAllowedUsers(): void {
-  for (const userId of DEFAULT_TELEGRAM_BOT_ALLOWED_IDS) {
-    stmtAddTelegramAllowedUser.run(userId);
-  }
-}
-ensureDefaultTelegramAllowedUsers();
 
 export function saveClient(data: SessionData & { chatId: string }): void {
   stmtInsertClient.run(
@@ -354,24 +325,6 @@ export function getRuntimeMode(): RuntimeMode {
 export function setRuntimeMode(mode: RuntimeMode): RuntimeMode {
   stmtSetRuntimeMode.run(mode);
   return getRuntimeMode();
-}
-
-export function getTelegramAllowedUsers(): string[] {
-  return (stmtGetTelegramAllowedUsers.all() as Array<{ user_id: string }>).map((r) => r.user_id);
-}
-
-export function isTelegramUserAllowed(userId: string): boolean {
-  const row = stmtIsTelegramUserAllowed.get(userId) as { user_id: string } | undefined;
-  return Boolean(row?.user_id);
-}
-
-export function addTelegramAllowedUser(userId: string): void {
-  stmtAddTelegramAllowedUser.run(userId);
-}
-
-export function removeTelegramAllowedUser(userId: string): boolean {
-  const result = stmtDeleteTelegramAllowedUser.run(userId);
-  return result.changes > 0;
 }
 
 export function getClientsSince(since: string): ClientRecord[] {
@@ -516,7 +469,6 @@ export function clearDatabaseForTests(): void {
     DELETE FROM sessions;
     DELETE FROM chat_estimate_requests;
     DELETE FROM clients;
-    DELETE FROM telegram_allowed_users;
     DELETE FROM runtime_settings;
   `);
 }

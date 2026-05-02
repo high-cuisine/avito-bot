@@ -49,6 +49,14 @@ export interface Config {
   submitWebhookUrl: string;
   /** Bearer для SUBMIT_WEBHOOK_URL (опционально). */
   submitWebhookSecret: string;
+  /** Веб-админка /admin (логин из .env). Если логин или пароль пусты — отключена. */
+  admin: {
+    enabled: boolean;
+    login: string;
+    password: string;
+    /** Подпись cookie; если пусто — используется api.token (нежелательно в проде). */
+    sessionSecret: string;
+  };
 }
 
 export const config: Config = {
@@ -79,6 +87,17 @@ export const config: Config = {
   allowlistUserIds: parseIdList(process.env.ALLOWLIST_USER_IDS),
   submitWebhookUrl: (process.env.SUBMIT_WEBHOOK_URL ?? '').trim(),
   submitWebhookSecret: (process.env.SUBMIT_WEBHOOK_SECRET ?? '').trim(),
+  admin: (() => {
+    const login = (process.env.ADMIN_LOGIN ?? '').trim();
+    const password = (process.env.ADMIN_PASSWORD ?? '').trim();
+    const sessionSecret = (process.env.ADMIN_SESSION_SECRET ?? '').trim();
+    return {
+      enabled: Boolean(login && password),
+      login,
+      password,
+      sessionSecret,
+    };
+  })(),
 };
 
 export function validateConfig(): void {

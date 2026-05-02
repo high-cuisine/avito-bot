@@ -1,6 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import {
-  addTelegramAllowedUser,
   clearDatabaseForTests,
   deleteChatEstimateRequest,
   deleteClient,
@@ -12,9 +11,6 @@ import {
   getClientById,
   getClientsSince,
   getRuntimeMode,
-  getTelegramAllowedUsers,
-  isTelegramUserAllowed,
-  removeTelegramAllowedUser,
   saveClient,
   saveSession,
   setRuntimeMode,
@@ -130,17 +126,4 @@ describe('repository', () => {
     expect(setRuntimeMode('test')).toBe('test');
   });
 
-  it('manages telegram allowed users', () => {
-    expect(getTelegramAllowedUsers()).toEqual([]);
-    expect(isTelegramUserAllowed('123')).toBe(false);
-
-    addTelegramAllowedUser('123');
-    addTelegramAllowedUser('456');
-
-    expect(getTelegramAllowedUsers()).toEqual(['123', '456']);
-    expect(isTelegramUserAllowed('123')).toBe(true);
-    expect(removeTelegramAllowedUser('123')).toBe(true);
-    expect(isTelegramUserAllowed('123')).toBe(false);
-    expect(removeTelegramAllowedUser('999')).toBe(false);
-  });
 });
