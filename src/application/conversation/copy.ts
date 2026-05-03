@@ -3,9 +3,12 @@ export const PHONE_INTENT_OPENING_REPLY =
 
 export const THANKS_CALLBACK_SOON = 'Спасибо, мы перезвоним вам в ближайшее время.';
 
-export const CALLBACK_HOURS_DASH = 'Мы работаем в будни с 8-00 до 18-00 по Москве.';
+export const CALLBACK_HOURS_DASH = 'Мы работаем в будни с 9-00 до 18-00 по Москве.';
 
-export const CALLBACK_HOURS_COLON = 'Мы работаем в будни с 8:00 до 18:00 по Москве.';
+export const CALLBACK_HOURS_COLON = 'Мы работаем в будни с 9:00 до 18:00 по Москве.';
+
+export const OUTSIDE_HOURS_REPLY =
+  'Здравствуйте! Мы работаем в будние дни с 9:00 до 18:00 по МСК. Напишите нам в рабочее время — мы сразу рассчитаем стоимость вашей перевозки.';
 
 export const POST_QUOTE_PHONE_PROMPT =
   'Напишите свой номер телефона, чтоб обсудить детали с логистом, кто занимается вашим направлением.';
@@ -34,4 +37,22 @@ export function isWhenCallbackQuestion(text: string): boolean {
   const clean = text.trim();
   if (!clean) return false;
   return CALLBACK_WORDS.test(clean);
+}
+
+const PRICE_QUERY_WORDS =
+  /(цен[уаы]|стоимост[ьи]|расчёт|расчет|рассчита|посчита|сколько\s*стоит|прайс|тариф|калькул|смет[ауе]|почём|почем)/i;
+
+export function isPriceQuery(text: string): boolean {
+  if (!text) return false;
+  return PRICE_QUERY_WORDS.test(text.trim());
+}
+
+export function isWorkingHoursMoscow(): boolean {
+  const now = new Date();
+  const utcMs = now.getTime() + now.getTimezoneOffset() * 60_000;
+  const moscow = new Date(utcMs + 3 * 60 * 60_000); // UTC+3
+  const day = moscow.getDay(); // 0=Sun, 6=Sat
+  const hour = moscow.getHours();
+  if (day === 0 || day === 6) return false;
+  return hour >= 9 && hour < 18;
 }
