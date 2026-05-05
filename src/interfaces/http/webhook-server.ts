@@ -1,5 +1,5 @@
 import express, { Request, Response } from 'express';
-import { allowlistActive, isSenderAllowlisted } from '../../core/allowlist.js';
+import { allowlistActive, shouldProcessSender } from '../../core/allowlist.js';
 import { config } from '../../core/config.js';
 import { logger } from '../../core/logger.js';
 import {
@@ -11,6 +11,7 @@ import {
 } from '../../integrations/avito/client.js';
 import { formatAllowlistRejectLog } from '../../integrations/avito/peer-label.js';
 import { processMessage } from '../../application/messaging/router.js';
+import { getRuntimeMode } from '../../infrastructure/storage/repository.js';
 
 interface WebhookPayload {
   value?: AvitoMessage & { chat_id: string };
@@ -39,8 +40,9 @@ export async function startWebhookServer(): Promise<void> {
     const text = payload.content?.text ?? '';
     if (!text) return;
 
-    if (!isSenderAllowlisted(chatId, authorId)) {
-      if (allowlistActive()) {
+    const runtimeMode = getRuntimeMode();
+    if (!shouldProcessSender(runtimeMode, chatId, authorId)) {
+      if (runtimeMode === 'test' && allowlistActive()) {
         let line = formatAllowlistRejectLog(undefined, authorId, chatId);
         try {
           const ch = await getChatById(chatId);

@@ -46,4 +46,21 @@ describe('allowlist', () => {
     expect(isSenderAllowlisted('c1', 'u2')).toBe(false);
     expect(isSenderAllowlisted('c2', 'u1')).toBe(false);
   });
+
+  it('prod mode bypasses allowlist', async () => {
+    process.env.ALLOWLIST_CHAT_IDS = 'c1';
+    process.env.ALLOWLIST_USER_IDS = 'u1';
+    vi.resetModules();
+    const { shouldProcessSender } = await import('./allowlist.js');
+    expect(shouldProcessSender('prod', 'c2', 'u2')).toBe(true);
+  });
+
+  it('test mode enforces allowlist', async () => {
+    process.env.ALLOWLIST_CHAT_IDS = 'c1';
+    process.env.ALLOWLIST_USER_IDS = 'u1';
+    vi.resetModules();
+    const { shouldProcessSender } = await import('./allowlist.js');
+    expect(shouldProcessSender('test', 'c1', 'u1')).toBe(true);
+    expect(shouldProcessSender('test', 'c2', 'u2')).toBe(false);
+  });
 });

@@ -1,4 +1,4 @@
-import { allowlistActive, isSenderAllowlisted } from '../../core/allowlist.js';
+import { allowlistActive, shouldProcessSender } from '../../core/allowlist.js';
 import { config } from '../../core/config.js';
 import { logger } from '../../core/logger.js';
 import {
@@ -9,6 +9,7 @@ import {
   resolveUserId,
 } from '../../integrations/avito/client.js';
 import { formatAllowlistRejectLog } from '../../integrations/avito/peer-label.js';
+import { getRuntimeMode } from '../../infrastructure/storage/repository.js';
 import { processMessage } from './router.js';
 
 const repliedMessages = new Set<string>();
@@ -63,8 +64,9 @@ async function pollOnce(): Promise<void> {
       const text = msg.content?.text ?? '';
       if (!text || text.startsWith('[Системное сообщение]')) continue;
 
-      if (!isSenderAllowlisted(msg.chat_id, msg.author_id)) {
-        if (allowlistActive()) {
+      const runtimeMode = getRuntimeMode();
+      if (!shouldProcessSender(runtimeMode, msg.chat_id, msg.author_id)) {
+        if (runtimeMode === 'test' && allowlistActive()) {
           logger.warn(
             formatAllowlistRejectLog(chat, msg.author_id, msg.chat_id),
           );
