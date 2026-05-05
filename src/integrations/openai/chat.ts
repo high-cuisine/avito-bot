@@ -47,6 +47,14 @@ const TOOL_TRANSPORT = 'submit_transport_lead';
 const TOOL_PHONE = 'submit_phone_backfill';
 const TOOL_CHAT_ESTIMATE = 'submit_chat_estimate_request';
 const TOOL_DECLARE_PHONE_PATH = 'declare_phone_contact_path';
+const ESTIMATE_ONLY_START_PROMPT =
+  'Хорошо, считаем в чате без номера. Напишите, пожалуйста: \n' +
+  '1.Маршрут (откуда куда везем)\n' +
+  '2.Характер груз\n' +
+  '3.Вес\n' +
+  '4.Объем\n' +
+  '5.Форму оплаты(наличные,безнал б/ндс, безнал с НДС)\n' +
+  '6.Сколько примерно в метрах займет Ваш груз в кузове у нас по длине пола(при ширине кузова 2.4 метра)';
 
 const MAX_STORED_MESSAGES = 40;
 const PHONE_REQUEST_RE = /(напиш|укаж|пришл|остав(ь|ьте)).{0,50}(номер|телефон)|(номер|телефон).{0,50}(\+7|8\d{10})/i;
@@ -400,6 +408,18 @@ function parseToolMessage(toolContent: string): string | null {
   }
 }
 
+function parseDeclarePhonePathMode(toolContent: string): 'survey' | 'survey_estimate_only' | null {
+  try {
+    const parsed = JSON.parse(toolContent) as { next_mode?: unknown };
+    if (parsed.next_mode === 'survey' || parsed.next_mode === 'survey_estimate_only') {
+      return parsed.next_mode;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 async function callChatCompletions(body: Record<string, unknown>): Promise<{
   message: ChoiceMessage | null;
   finishReason: string | null;
@@ -618,6 +638,17 @@ export async function runLlmTurn(
     const toolMsg: LlmChatMessage = { role: 'tool', tool_call_id: tc.id, content: toolContent };
     newHistoryEntries.push(toolMsg);
     followMessages.push({ role: 'tool', tool_call_id: tc.id, content: toolContent });
+  }
+
+  if (ctx.chatMode === 'phone_intent') {
+    const declaredEstimateOnly = newHistoryEntries.some((entry) => {
+      if (entry.role !== 'tool') return false;
+      return parseDeclarePhonePathMode(entry.content) === 'survey_estimate_only';
+    });
+    if (declaredEstimateOnly) {
+      newHistoryEntries.push({ role: 'assistant', content: ESTIMATE_ONLY_START_PROMPT });
+      return { reply: ESTIMATE_ONLY_START_PROMPT, newHistoryEntries, sessionEnded: false };
+    }
   }
 
   if (writeToolAttempted && !sessionEnded && firstWriteToolError) {
