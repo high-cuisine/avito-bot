@@ -228,6 +228,16 @@ describe('conversation service templates', () => {
     expect(runLlmTurn).not.toHaveBeenCalled();
   });
 
+  it('switches to estimate-only mode on "посчитайте стоимость" in first message', async () => {
+    const { handleConversation } = await import('./service.js');
+    const reply = await handleConversation(
+      'ch-first-price',
+      'добрый день\nпосчитайте стоимость\nмск спб\nстекло\n2 тонны',
+    );
+    expect(reply).toBe(ESTIMATE_ONLY_PROMPT);
+    expect(runLlmTurn).not.toHaveBeenCalled();
+  });
+
   it('switches to estimate-only mode on "второй вариант"', async () => {
     const { handleConversation } = await import('./service.js');
     await handleConversation('ch-second-option', 'привет');

@@ -102,7 +102,7 @@ function isPhoneRefusalText(text: string): boolean {
 function isPriceFirstRequestText(text: string): boolean {
   if (!text) return false;
   const normalized = text.toLowerCase().replace(/\s+/g, ' ').trim();
-  return PRICE_FIRST_HINTS.some((hint) => normalized.includes(hint));
+  return PRICE_FIRST_HINTS.some((hint) => normalized.includes(hint)) || isPriceQuery(normalized);
 }
 
 function isEstimateOnlyChoiceText(text: string): boolean {
