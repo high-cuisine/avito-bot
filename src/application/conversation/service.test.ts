@@ -231,4 +231,20 @@ describe('conversation service templates', () => {
     expect(runLlmTurn).not.toHaveBeenCalled();
     expect(getSession('ch-survey-refuse')?.data.chatMode).toBe('survey_estimate_only');
   });
+
+  it('completes with thanks when phone arrives in survey mode', async () => {
+    saveSession('ch-survey-phone', 'LLM', {
+      ...LLM_DATA_BASE,
+      chatMode: 'survey',
+      llmMessages: [{ role: 'assistant', content: 'Пришлите номер телефона.' }],
+    });
+
+    const { handleConversation } = await import('./service.js');
+    const reply = await handleConversation('ch-survey-phone', 'мой телефон 8 (900) 000-00-02');
+
+    expect(reply).toBe('Спасибо, мы перезвоним вам в ближайшее время.');
+    expect(runLlmTurn).not.toHaveBeenCalled();
+    expect(getSession('ch-survey-phone')).toBeNull();
+    expect(getClientByChatId('ch-survey-phone')?.phone).toBe('+79000000002');
+  });
 });

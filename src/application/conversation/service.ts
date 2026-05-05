@@ -168,6 +168,41 @@ function appendTurn(data: SessionData, userText: string, entries: LlmChatMessage
   data.llmMessages = list;
 }
 
+async function completePhoneOnlyLead(
+  chatId: string,
+  data: SessionData,
+  phone: string,
+): Promise<string> {
+  saveClient({
+    chatId,
+    itemId: data.itemId || '',
+    clientName: data.clientName || '',
+    cargo: '',
+    weight: '',
+    volume: '',
+    route: '',
+    paymentMethod: '',
+    phone,
+  });
+  const whOk = await postSubmitWebhook({
+    event: 'transport_lead',
+    chat_id: chatId,
+    item_id: data.itemId || null,
+    client_name: data.clientName || null,
+    cargo: null,
+    route: null,
+    payment_method: null,
+    phone,
+    submitted_at: new Date().toISOString(),
+  });
+  if (!whOk) {
+    logger.warn({ chatId }, 'Phone-only lead: local save OK but submit webhook failed');
+  }
+  deleteSession(chatId);
+  logger.info({ chatId, phone, webhook_ok: whOk }, 'Phone-only lead completed');
+  return THANKS_CALLBACK_SOON;
+}
+
 export async function handleConversation(
   chatId: string,
   text: string,
@@ -280,34 +315,7 @@ export async function handleConversation(
   if (mode === 'phone_intent' && history.some((m) => m.role === 'assistant')) {
     const earlyPhone = normalizePhone(text);
     if (earlyPhone) {
-      saveClient({
-        chatId,
-        itemId: data.itemId || '',
-        clientName: data.clientName || '',
-        cargo: '',
-        weight: '',
-        volume: '',
-        route: '',
-        paymentMethod: '',
-        phone: earlyPhone,
-      });
-      const whOk = await postSubmitWebhook({
-        event: 'transport_lead',
-        chat_id: chatId,
-        item_id: data.itemId || null,
-        client_name: data.clientName || null,
-        cargo: null,
-        route: null,
-        payment_method: null,
-        phone: earlyPhone,
-        submitted_at: new Date().toISOString(),
-      });
-      if (!whOk) {
-        logger.warn({ chatId }, 'Early phone: local save OK but submit webhook failed');
-      }
-      deleteSession(chatId);
-      logger.info({ chatId, phone: earlyPhone, webhook_ok: whOk }, 'Phone-only lead completed');
-      return THANKS_CALLBACK_SOON;
+      return completePhoneOnlyLead(chatId, data, earlyPhone);
     }
 
     if (isWithoutPhoneChoiceText(text)) {
@@ -325,6 +333,13 @@ export async function handleConversation(
     appendTurn(data, text, [{ role: 'assistant', content: ESTIMATE_ONLY_START_PROMPT }]);
     saveSession(chatId, LLM_STATE, data);
     return ESTIMATE_ONLY_START_PROMPT;
+  }
+
+  if (mode === 'survey') {
+    const phoneInSurvey = normalizePhone(text);
+    if (phoneInSurvey) {
+      return completePhoneOnlyLead(chatId, data, phoneInSurvey);
+    }
   }
 
   if (mode === 'post_quote') {
