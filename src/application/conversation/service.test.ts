@@ -46,13 +46,12 @@ const LLM_DATA_BASE: SessionData = {
 };
 
 const ESTIMATE_ONLY_PROMPT =
-  'Хорошо, считаем в чате без номера. Напишите, пожалуйста: \n' +
-  '1.Маршрут (откуда куда везем)\n' +
-  '2.Характер груз\n' +
-  '3.Вес\n' +
-  '4.Объем\n' +
-  '5.Форму оплаты(наличные,безнал б/ндс, безнал с НДС)\n' +
-  '6.Сколько примерно в метрах займет Ваш груз в кузове у нас по длине пола(при ширине кузова 2.4 метра)';
+  'Хорошо, давайте тогда рассчитаем стоимость грузоперевозки здесь. Для этого мне понадобятся следующие данные:\n\n' +
+  '1.  **Откуда и куда** нужно перевезти груз (город, адрес).\n' +
+  '2.  **Что именно** нужно перевезти (тип груза, габариты, вес).\n' +
+  '3.  **Когда** планируется перевозка (дата, время).\n' +
+  '4.  **Дополнительные услуги** (например, грузчики, упаковка, страховка).\n\n' +
+  'Как только у меня будет эта информация, я смогу предоставить вам более точный расчет.';
 
 describe('conversation service templates', () => {
   beforeEach(() => {
@@ -79,7 +78,7 @@ describe('conversation service templates', () => {
     await handleConversation('ch-hours', '+79000000000');
 
     const hours = await handleConversation('ch-hours', 'когда перезвоните?');
-    expect(hours).toBe('Мы работаем в будни с 8-00 до 18-00 по Москве.');
+    expect(hours).toBe('Мы работаем в будни с 9-00 до 18-00 по Москве.');
   });
 
   it('asks clarifying question when client with saved phone writes again', async () => {
@@ -148,7 +147,7 @@ describe('conversation service templates', () => {
     expect(getClientByChatId('ch-pq')?.phone).toBe('+79001234567');
 
     const hours = await handleConversation('ch-pq', 'когда перезвоните');
-    expect(hours).toBe('Мы работаем в будни с 8:00 до 18:00 по Москве.');
+    expect(hours).toBe('Мы работаем в будни с 9:00 до 18:00 по Москве.');
   });
 
   it('post-quote negative returns fixed budget phrase', async () => {
@@ -209,7 +208,7 @@ describe('conversation service templates', () => {
     expect(runLlmTurn).not.toHaveBeenCalled();
   });
 
-  it('sanitizes accidental phone request in estimate-only reply', async () => {
+  it('returns fixed estimate-only prompt for any message in estimate-only mode', async () => {
     runLlmTurn.mockResolvedValueOnce({
       reply: 'Пожалуйста, напишите номер телефона +7XXXXXXXXXX.',
       newHistoryEntries: [{ role: 'assistant', content: 'Пожалуйста, напишите номер телефона +7XXXXXXXXXX.' }],
@@ -222,7 +221,8 @@ describe('conversation service templates', () => {
     });
     const { handleConversation } = await import('./service.js');
     const reply = await handleConversation('ch-est-no-phone', 'маршрут спб москва');
-    expect(reply).toContain('номер телефона не нужен');
+    expect(reply).toBe(ESTIMATE_ONLY_PROMPT);
+    expect(runLlmTurn).not.toHaveBeenCalled();
   });
 
   it('switches survey mode to estimate-only on short refusal "не дам"', async () => {

@@ -116,7 +116,7 @@ function isWithoutPhoneChoiceText(text: string): boolean {
 
 function enforceNoPhoneInEstimateMode(mode: SessionData['chatMode'], reply: string): string {
   if ((mode === 'survey_estimate_only' || mode === 'estimate_wait') && PHONE_REQUEST_PATTERN.test(reply)) {
-    return 'Принято. В этом сценарии номер телефона не нужен. Продолжаем расчет в чате: уточните недостающие параметры (маршрут, груз, вес, оплата), и я передам заявку логисту.';
+    return ESTIMATE_ONLY_START_PROMPT;
   }
   return reply;
 }
@@ -416,7 +416,7 @@ export async function handleConversation(
     return ESTIMATE_WAITING_REPLY;
   }
 
-  if (mode === 'survey_estimate_only' && !history.some((m) => m.role === 'assistant')) {
+  if (mode === 'survey_estimate_only') {
     appendTurn(data, text, [{ role: 'assistant', content: ESTIMATE_ONLY_START_PROMPT }]);
     saveSession(chatId, LLM_STATE, data);
     return ESTIMATE_ONLY_START_PROMPT;
