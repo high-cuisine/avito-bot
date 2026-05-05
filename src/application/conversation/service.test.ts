@@ -235,6 +235,29 @@ describe('conversation service templates', () => {
     expect(runLlmTurn).toHaveBeenCalledOnce();
   });
 
+  it('strips markdown stars from estimate-only follow-up text', async () => {
+    runLlmTurn.mockResolvedValueOnce({
+      reply:
+        '1. **Характер груза**\n2. **Объем**\n3. **Форма оплаты**\n4. **Длина по полу**',
+      newHistoryEntries: [
+        {
+          role: 'assistant',
+          content:
+            '1. **Характер груза**\n2. **Объем**\n3. **Форма оплаты**\n4. **Длина по полу**',
+        },
+      ],
+      sessionEnded: false,
+    });
+    saveSession('ch-est-stars', 'LLM', {
+      ...LLM_DATA_BASE,
+      chatMode: 'survey_estimate_only',
+      llmMessages: [{ role: 'assistant', content: ESTIMATE_ONLY_PROMPT }],
+    });
+    const { handleConversation } = await import('./service.js');
+    const reply = await handleConversation('ch-est-stars', 'Маршрут: Москва - Санкт-Петербург\nВес: 2 тонны');
+    expect(reply).toBe('1. Характер груза\n2. Объем\n3. Форма оплаты\n4. Длина по полу');
+  });
+
   it('switches survey mode to estimate-only on short refusal "не дам"', async () => {
     saveSession('ch-survey-refuse', 'LLM', {
       ...LLM_DATA_BASE,

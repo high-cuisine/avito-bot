@@ -67,13 +67,17 @@ function requiredToolByMode(chatMode: LlmContext['chatMode']): string | null {
 }
 
 function sanitizeNoPhoneModeReply(chatMode: LlmContext['chatMode'], reply: string): string {
+  const cleaned =
+    chatMode === 'survey_estimate_only' || chatMode === 'estimate_wait'
+      ? reply.replace(/\*/g, '')
+      : reply;
   if (
     (chatMode === 'survey_estimate_only' || chatMode === 'estimate_wait') &&
-    PHONE_REQUEST_RE.test(reply)
+    PHONE_REQUEST_RE.test(cleaned)
   ) {
     return 'Принято. В этом сценарии номер телефона не нужен. Продолжаем расчет в чате: уточните недостающие параметры (маршрут, груз, вес, оплата), и я передам заявку логисту.';
   }
-  return reply;
+  return cleaned;
 }
 
 function transportTool() {

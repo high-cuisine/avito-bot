@@ -115,10 +115,14 @@ function isWithoutPhoneChoiceText(text: string): boolean {
 }
 
 function enforceNoPhoneInEstimateMode(mode: SessionData['chatMode'], reply: string): string {
-  if ((mode === 'survey_estimate_only' || mode === 'estimate_wait') && PHONE_REQUEST_PATTERN.test(reply)) {
+  const cleaned =
+    mode === 'survey_estimate_only' || mode === 'estimate_wait'
+      ? reply.replace(/\*/g, '')
+      : reply;
+  if ((mode === 'survey_estimate_only' || mode === 'estimate_wait') && PHONE_REQUEST_PATTERN.test(cleaned)) {
     return ESTIMATE_ONLY_START_PROMPT;
   }
-  return reply;
+  return cleaned;
 }
 
 function hasEstimateOnlyPromptInHistory(history: LlmChatMessage[]): boolean {
