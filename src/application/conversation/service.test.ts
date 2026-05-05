@@ -46,12 +46,13 @@ const LLM_DATA_BASE: SessionData = {
 };
 
 const ESTIMATE_ONLY_PROMPT =
-  'Хорошо, давайте тогда рассчитаем стоимость грузоперевозки здесь. Для этого мне понадобятся следующие данные:\n\n' +
-  '1.  **Откуда и куда** нужно перевезти груз (город, адрес).\n' +
-  '2.  **Что именно** нужно перевезти (тип груза, габариты, вес).\n' +
-  '3.  **Когда** планируется перевозка (дата, время).\n' +
-  '4.  **Дополнительные услуги** (например, грузчики, упаковка, страховка).\n\n' +
-  'Как только у меня будет эта информация, я смогу предоставить вам более точный расчет.';
+  'Хорошо, считаем в чате без номера. Напишите, пожалуйста: \n' +
+  '1.Маршрут (откуда куда везем)\n' +
+  '2.Характер груз\n' +
+  '3.Вес\n' +
+  '4.Объем\n' +
+  '5.Форму оплаты(наличные,безнал б/ндс, безнал с НДС)\n' +
+  '6.Сколько примерно в метрах займет Ваш груз в кузове у нас по длине пола(при ширине кузова 2.4 метра)';
 
 describe('conversation service templates', () => {
   beforeEach(() => {
@@ -184,6 +185,15 @@ describe('conversation service templates', () => {
     expect(getSession('ch-refuse')?.data.chatMode).toBe('survey_estimate_only');
   });
 
+  it('switches to estimate-only mode on any non-phone text after phone prompt', async () => {
+    const { handleConversation } = await import('./service.js');
+    await handleConversation('ch-any-non-phone', 'привет');
+    const reply = await handleConversation('ch-any-non-phone', 'давайте обсудим тут');
+    expect(reply).toBe(ESTIMATE_ONLY_PROMPT);
+    expect(runLlmTurn).not.toHaveBeenCalled();
+    expect(getSession('ch-any-non-phone')?.data.chatMode).toBe('survey_estimate_only');
+  });
+
   it('switches to estimate-only mode on price-first request in phone_intent', async () => {
     const { handleConversation } = await import('./service.js');
     await handleConversation('ch-price-first', 'привет');
@@ -238,6 +248,21 @@ describe('conversation service templates', () => {
     expect(reply).toBe(ESTIMATE_ONLY_PROMPT);
     expect(runLlmTurn).not.toHaveBeenCalled();
     expect(getSession('ch-survey-refuse')?.data.chatMode).toBe('survey_estimate_only');
+  });
+
+  it('switches survey mode to estimate-only on any non-phone message', async () => {
+    saveSession('ch-survey-any', 'LLM', {
+      ...LLM_DATA_BASE,
+      chatMode: 'survey',
+      llmMessages: [{ role: 'assistant', content: 'Пришлите номер телефона.' }],
+    });
+
+    const { handleConversation } = await import('./service.js');
+    const reply = await handleConversation('ch-survey-any', 'маршрут москва казань');
+
+    expect(reply).toBe(ESTIMATE_ONLY_PROMPT);
+    expect(runLlmTurn).not.toHaveBeenCalled();
+    expect(getSession('ch-survey-any')?.data.chatMode).toBe('survey_estimate_only');
   });
 
   it('returns fixed estimate-only questionnaire when mode starts without assistant history', async () => {

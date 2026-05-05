@@ -320,18 +320,8 @@ export async function handleConversation(
       return completePhoneOnlyLead(chatId, data, earlyPhone);
     }
 
-    if (isWithoutPhoneChoiceText(text)) {
-      data.chatMode = 'survey_estimate_only';
-      logger.info({ chatId }, 'Client declined phone, switched to estimate-only mode');
-      appendTurn(data, text, [{ role: 'assistant', content: ESTIMATE_ONLY_START_PROMPT }]);
-      saveSession(chatId, LLM_STATE, data);
-      return ESTIMATE_ONLY_START_PROMPT;
-    }
-  }
-
-  if (mode === 'survey' && isWithoutPhoneChoiceText(text)) {
     data.chatMode = 'survey_estimate_only';
-    logger.info({ chatId }, 'Client declined phone during survey, switched to estimate-only mode');
+    logger.info({ chatId }, 'Phone not provided in phone_intent, switched to fixed estimate-only prompt');
     appendTurn(data, text, [{ role: 'assistant', content: ESTIMATE_ONLY_START_PROMPT }]);
     saveSession(chatId, LLM_STATE, data);
     return ESTIMATE_ONLY_START_PROMPT;
@@ -342,6 +332,11 @@ export async function handleConversation(
     if (phoneInSurvey) {
       return completePhoneOnlyLead(chatId, data, phoneInSurvey);
     }
+    data.chatMode = 'survey_estimate_only';
+    logger.info({ chatId }, 'No phone in survey mode, switched to fixed estimate-only prompt');
+    appendTurn(data, text, [{ role: 'assistant', content: ESTIMATE_ONLY_START_PROMPT }]);
+    saveSession(chatId, LLM_STATE, data);
+    return ESTIMATE_ONLY_START_PROMPT;
   }
 
   if (mode === 'post_quote') {
