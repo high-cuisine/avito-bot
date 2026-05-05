@@ -201,6 +201,14 @@ describe('conversation service templates', () => {
     expect(runLlmTurn).not.toHaveBeenCalled();
   });
 
+  it('switches to estimate-only mode on broad refusal phrasing', async () => {
+    const { handleConversation } = await import('./service.js');
+    await handleConversation('ch-broad-refuse', 'привет');
+    const reply = await handleConversation('ch-broad-refuse', 'я не готов оставлять телефон, считаем в чате');
+    expect(reply).toBe(ESTIMATE_ONLY_PROMPT);
+    expect(runLlmTurn).not.toHaveBeenCalled();
+  });
+
   it('sanitizes accidental phone request in estimate-only reply', async () => {
     runLlmTurn.mockResolvedValueOnce({
       reply: 'Пожалуйста, напишите номер телефона +7XXXXXXXXXX.',
@@ -230,6 +238,20 @@ describe('conversation service templates', () => {
     expect(reply).toBe(ESTIMATE_ONLY_PROMPT);
     expect(runLlmTurn).not.toHaveBeenCalled();
     expect(getSession('ch-survey-refuse')?.data.chatMode).toBe('survey_estimate_only');
+  });
+
+  it('returns fixed estimate-only questionnaire when mode starts without assistant history', async () => {
+    saveSession('ch-est-empty-history', 'LLM', {
+      ...LLM_DATA_BASE,
+      chatMode: 'survey_estimate_only',
+      llmMessages: [],
+    });
+
+    const { handleConversation } = await import('./service.js');
+    const reply = await handleConversation('ch-est-empty-history', 'нужен расчет');
+
+    expect(reply).toBe(ESTIMATE_ONLY_PROMPT);
+    expect(runLlmTurn).not.toHaveBeenCalled();
   });
 
   it('completes with thanks when phone arrives in survey mode', async () => {

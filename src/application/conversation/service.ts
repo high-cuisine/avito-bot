@@ -64,6 +64,8 @@ const PHONE_REFUSAL_HINTS = [
   'телефон не буду давать',
   'без телефона',
 ];
+const PHONE_REFUSAL_RE =
+  /(без\s*(номера|телефона))|((не\s*хоч|не\s*буд|не\s*мог|не\s*готов).{0,30}(да(ва|ть)|остав(ля|ить)|писа(ть|ть)|указыва(ть|ть)).{0,20}(номер|телефон))|((номер|телефон).{0,20}(не\s*дам|не\s*даю|не\s*оставлю))/i;
 
 const PRICE_FIRST_HINTS = [
   'посчитайте цену',
@@ -93,7 +95,7 @@ const PHONE_REQUEST_PATTERN =
 function isPhoneRefusalText(text: string): boolean {
   if (!text) return false;
   const normalized = text.toLowerCase().replace(/\s+/g, ' ').trim();
-  return PHONE_REFUSAL_HINTS.some((hint) => normalized.includes(hint));
+  return PHONE_REFUSAL_HINTS.some((hint) => normalized.includes(hint)) || PHONE_REFUSAL_RE.test(normalized);
 }
 
 function isPriceFirstRequestText(text: string): boolean {
@@ -412,6 +414,12 @@ export async function handleConversation(
     appendTurn(data, text, [{ role: 'assistant', content: ESTIMATE_WAITING_REPLY }]);
     saveSession(chatId, LLM_STATE, data);
     return ESTIMATE_WAITING_REPLY;
+  }
+
+  if (mode === 'survey_estimate_only' && !history.some((m) => m.role === 'assistant')) {
+    appendTurn(data, text, [{ role: 'assistant', content: ESTIMATE_ONLY_START_PROMPT }]);
+    saveSession(chatId, LLM_STATE, data);
+    return ESTIMATE_ONLY_START_PROMPT;
   }
 
   const knownPhoneNorm =
