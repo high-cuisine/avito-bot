@@ -92,6 +92,9 @@ const ESTIMATE_ONLY_HINTS = [
 const PHONE_REQUEST_PATTERN =
   /(напиш|укаж|пришл|остав(ь|ьте)).{0,40}(номер|телефон)|(номер|телефон).{0,40}(\+7|8\d{10})/i;
 const INVALID_PHONE_REPLY = 'Ваш номер указан не верно, просьба проверить цифры.';
+const PAYMENT_RE = /(налич|безнал|ндс|с\s*ндс|б\/ндс)/i;
+const VOLUME_RE = /(об[ъь]?[её]м|м3|куб|кубометр)/i;
+const FLOOR_METERS_RE = /(метр|по\s+длине\s+пола|длина\s+пола|в\s+кузове)/i;
 
 function isPhoneRefusalText(text: string): boolean {
   if (!text) return false;
@@ -142,6 +145,52 @@ function getInvalidPhoneAttemptKey(text: string): string | null {
   if (!digits) return null;
   if (digits.length === 10 || digits.length === 11) return null;
   return digits;
+}
+
+function hasMeaningfulText(text: string): boolean {
+  const t = text.toLowerCase().trim();
+  if (!t) return false;
+  if (isPriceFirstRequestText(t)) return false;
+  if (/^(привет|здравствуйте|добрый\s+день|добрый\s+вечер|доброе\s+утро)$/i.test(t)) return false;
+  return /[а-яёa-z0-9]/i.test(t);
+}
+
+function normalizeLines(text: string): string[] {
+  return text
+    .split('\n')
+    .map((l) => l.trim())
+    .filter(Boolean);
+}
+
+function buildEstimateOnlyFollowupFromText(text: string): string | null {
+  const lines = normalizeLines(text);
+  const normalized = lines.map((l) => l.toLowerCase());
+
+  const hasRoute =
+    normalized.some((l) => /\b(мск|москва|спб|санкт-?петербург)\b/.test(l)) ||
+    normalized.some((l) => /(откуда|куда|маршрут)/.test(l)) ||
+    normalized.some((l) => /\b.+\s*[-–—>]\s*.+\b/.test(l)) ||
+    normalized.some((l) =>
+      /(мск|москва|спб|санкт-?петербург).{0,20}(мск|москва|спб|санкт-?петербург)/.test(l),
+    );
+  const hasCargo = normalized.some((l) => /(груз|стекл|мебел|оборуд|короб|паллет|товар)/.test(l));
+  const hasWeight = normalized.some((l) => /(вес|кг|тонн|тн|т\.)/.test(l));
+  const hasVolume = normalized.some((l) => VOLUME_RE.test(l));
+  const hasPayment = normalized.some((l) => PAYMENT_RE.test(l));
+  const hasFloorMeters = normalized.some((l) => FLOOR_METERS_RE.test(l));
+  const providedCount = [hasRoute, hasCargo, hasWeight, hasVolume, hasPayment, hasFloorMeters].filter(Boolean).length;
+  if (providedCount === 0) return null;
+
+  const missing: string[] = [];
+  if (!hasRoute) missing.push('маршрут');
+  if (!hasCargo) missing.push('характер груза');
+  if (!hasWeight) missing.push('вес');
+  if (!hasVolume) missing.push('объем');
+  if (!hasPayment) missing.push('форму оплаты');
+  if (!hasFloorMeters) missing.push('сколько метров по длине пола займет груз в кузове');
+
+  if (missing.length === 0) return null;
+  return `Принято. Для расчета в чате без номера уточните, пожалуйста: ${missing.join(', ')}.`;
 }
 
 function emptyData(): SessionData {
@@ -332,9 +381,11 @@ export async function handleConversation(
     if (isWithoutPhoneChoiceText(text)) {
       data.chatMode = 'survey_estimate_only';
       logger.info({ chatId }, 'First message is price/estimate request — skipping phone prompt, going to estimate-only');
-      appendTurn(data, text, [{ role: 'assistant', content: ESTIMATE_ONLY_START_PROMPT }]);
+      const followup = buildEstimateOnlyFollowupFromText(text);
+      const scriptReply = followup ?? ESTIMATE_ONLY_START_PROMPT;
+      appendTurn(data, text, [{ role: 'assistant', content: scriptReply }]);
       saveSession(chatId, LLM_STATE, data);
-      return ESTIMATE_ONLY_START_PROMPT;
+      return scriptReply;
     } else {
       appendTurn(data, text, [{ role: 'assistant', content: PHONE_INTENT_OPENING_REPLY }]);
       saveSession(chatId, LLM_STATE, data);
@@ -358,6 +409,16 @@ export async function handleConversation(
       appendTurn(data, text, [{ role: 'assistant', content: INVALID_PHONE_REPLY }]);
       saveSession(chatId, LLM_STATE, data);
       return INVALID_PHONE_REPLY;
+    }
+
+    if (hasMeaningfulText(text)) {
+      data.chatMode = 'survey_estimate_only';
+      const followup = buildEstimateOnlyFollowupFromText(text);
+      const scriptReply = followup ?? ESTIMATE_ONLY_START_PROMPT;
+      logger.info({ chatId }, 'Phone not provided in phone_intent, switched to estimate-only followup');
+      appendTurn(data, text, [{ role: 'assistant', content: scriptReply }]);
+      saveSession(chatId, LLM_STATE, data);
+      return scriptReply;
     }
 
     data.chatMode = 'survey_estimate_only';

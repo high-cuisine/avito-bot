@@ -234,7 +234,23 @@ describe('conversation service templates', () => {
       'ch-first-price',
       'добрый день\nпосчитайте стоимость\nмск спб\nстекло\n2 тонны',
     );
-    expect(reply).toBe(ESTIMATE_ONLY_PROMPT);
+    expect(reply).toContain('Для расчета в чате без номера уточните, пожалуйста:');
+    expect(runLlmTurn).not.toHaveBeenCalled();
+  });
+
+  it('asks only missing estimate fields when first message already contains partial data', async () => {
+    const { handleConversation } = await import('./service.js');
+    const reply = await handleConversation(
+      'ch-first-partial-estimate',
+      'добрый день\nпосчитайте стоимость\nмск спб\nстекло\n2 тонны',
+    );
+    expect(reply).toContain('Для расчета в чате без номера уточните, пожалуйста:');
+    expect(reply).toContain('объем');
+    expect(reply).toContain('форму оплаты');
+    expect(reply).toContain('сколько метров по длине пола займет груз в кузове');
+    expect(reply).not.toContain('маршрут');
+    expect(reply).not.toContain('характер груза');
+    expect(reply).not.toContain('вес');
     expect(runLlmTurn).not.toHaveBeenCalled();
   });
 
