@@ -218,21 +218,21 @@ describe('conversation service templates', () => {
     expect(runLlmTurn).not.toHaveBeenCalled();
   });
 
-  it('returns fixed estimate-only prompt for any message in estimate-only mode', async () => {
+  it('does not spam estimate-only prompt after it was already sent', async () => {
     runLlmTurn.mockResolvedValueOnce({
-      reply: 'Пожалуйста, напишите номер телефона +7XXXXXXXXXX.',
-      newHistoryEntries: [{ role: 'assistant', content: 'Пожалуйста, напишите номер телефона +7XXXXXXXXXX.' }],
+      reply: 'Уточните, пожалуйста, вес груза и форму оплаты.',
+      newHistoryEntries: [{ role: 'assistant', content: 'Уточните, пожалуйста, вес груза и форму оплаты.' }],
       sessionEnded: false,
     });
     saveSession('ch-est-no-phone', 'LLM', {
       ...LLM_DATA_BASE,
       chatMode: 'survey_estimate_only',
-      llmMessages: [{ role: 'assistant', content: 'Давайте соберем данные для расчета в чате.' }],
+      llmMessages: [{ role: 'assistant', content: ESTIMATE_ONLY_PROMPT }],
     });
     const { handleConversation } = await import('./service.js');
     const reply = await handleConversation('ch-est-no-phone', 'маршрут спб москва');
-    expect(reply).toBe(ESTIMATE_ONLY_PROMPT);
-    expect(runLlmTurn).not.toHaveBeenCalled();
+    expect(reply).toBe('Уточните, пожалуйста, вес груза и форму оплаты.');
+    expect(runLlmTurn).toHaveBeenCalledOnce();
   });
 
   it('switches survey mode to estimate-only on short refusal "не дам"', async () => {

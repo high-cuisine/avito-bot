@@ -121,6 +121,10 @@ function enforceNoPhoneInEstimateMode(mode: SessionData['chatMode'], reply: stri
   return reply;
 }
 
+function hasEstimateOnlyPromptInHistory(history: LlmChatMessage[]): boolean {
+  return history.some((m) => m.role === 'assistant' && m.content === ESTIMATE_ONLY_START_PROMPT);
+}
+
 function emptyData(): SessionData {
   return {
     itemId: '',
@@ -411,7 +415,7 @@ export async function handleConversation(
     return ESTIMATE_WAITING_REPLY;
   }
 
-  if (mode === 'survey_estimate_only') {
+  if (mode === 'survey_estimate_only' && !hasEstimateOnlyPromptInHistory(history)) {
     appendTurn(data, text, [{ role: 'assistant', content: ESTIMATE_ONLY_START_PROMPT }]);
     saveSession(chatId, LLM_STATE, data);
     return ESTIMATE_ONLY_START_PROMPT;
