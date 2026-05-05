@@ -129,6 +129,8 @@ export interface SessionData {
     | 'estimate_wait'
     | 'post_quote';
   postQuotePhase?: 'awaiting_sentiment' | 'awaiting_phone' | 'phone_captured';
+  /** Последняя невалидная попытка телефона; при повторе принимаем как есть. */
+  invalidPhoneAttempt?: string;
 }
 
 export interface Session {

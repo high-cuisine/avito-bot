@@ -194,6 +194,24 @@ describe('conversation service templates', () => {
     expect(getSession('ch-any-non-phone')?.data.chatMode).toBe('survey_estimate_only');
   });
 
+  it('returns invalid phone message and waits for retry', async () => {
+    const { handleConversation } = await import('./service.js');
+    await handleConversation('ch-invalid-phone', 'привет');
+    const reply = await handleConversation('ch-invalid-phone', 'мой номер 8 999 111 22 33 44');
+    expect(reply).toBe('Ваш номер указан не верно, просьба проверить цифры.');
+    expect(getSession('ch-invalid-phone')?.data.chatMode).toBe('phone_intent');
+  });
+
+  it('accepts same invalid phone on repeated send', async () => {
+    const { handleConversation } = await import('./service.js');
+    await handleConversation('ch-repeat-invalid-phone', 'привет');
+    await handleConversation('ch-repeat-invalid-phone', 'мой номер 8 999 111 22 33 44');
+    const thanks = await handleConversation('ch-repeat-invalid-phone', 'мой номер 8 999 111 22 33 44');
+    expect(thanks).toBe('Спасибо, мы перезвоним вам в ближайшее время.');
+    expect(getSession('ch-repeat-invalid-phone')).toBeNull();
+    expect(getClientByChatId('ch-repeat-invalid-phone')?.phone).toBe('мой номер 8 999 111 22 33 44');
+  });
+
   it('switches to estimate-only mode on price-first request in phone_intent', async () => {
     const { handleConversation } = await import('./service.js');
     await handleConversation('ch-price-first', 'привет');

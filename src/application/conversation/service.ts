@@ -91,6 +91,7 @@ const ESTIMATE_ONLY_HINTS = [
 
 const PHONE_REQUEST_PATTERN =
   /(напиш|укаж|пришл|остав(ь|ьте)).{0,40}(номер|телефон)|(номер|телефон).{0,40}(\+7|8\d{10})/i;
+const INVALID_PHONE_REPLY = 'Ваш номер указан не верно, просьба проверить цифры.';
 
 function isPhoneRefusalText(text: string): boolean {
   if (!text) return false;
@@ -127,6 +128,20 @@ function enforceNoPhoneInEstimateMode(mode: SessionData['chatMode'], reply: stri
 
 function hasEstimateOnlyPromptInHistory(history: LlmChatMessage[]): boolean {
   return history.some((m) => m.role === 'assistant' && m.content === ESTIMATE_ONLY_START_PROMPT);
+}
+
+function extractPhoneLikeDigits(text: string): string | null {
+  const m = text.match(/\+?\d[\d\s().-]{7,}\d/);
+  if (!m) return null;
+  const digits = m[0].replace(/\D/g, '');
+  return digits || null;
+}
+
+function getInvalidPhoneAttemptKey(text: string): string | null {
+  const digits = extractPhoneLikeDigits(text);
+  if (!digits) return null;
+  if (digits.length === 10 || digits.length === 11) return null;
+  return digits;
 }
 
 function emptyData(): SessionData {
@@ -325,7 +340,19 @@ export async function handleConversation(
   if (mode === 'phone_intent' && history.some((m) => m.role === 'assistant')) {
     const earlyPhone = normalizePhone(text);
     if (earlyPhone) {
+      data.invalidPhoneAttempt = undefined;
       return completePhoneOnlyLead(chatId, data, earlyPhone);
+    }
+    const invalidPhoneKey = getInvalidPhoneAttemptKey(text);
+    if (invalidPhoneKey) {
+      if (data.invalidPhoneAttempt === invalidPhoneKey) {
+        data.invalidPhoneAttempt = undefined;
+        return completePhoneOnlyLead(chatId, data, text.trim());
+      }
+      data.invalidPhoneAttempt = invalidPhoneKey;
+      appendTurn(data, text, [{ role: 'assistant', content: INVALID_PHONE_REPLY }]);
+      saveSession(chatId, LLM_STATE, data);
+      return INVALID_PHONE_REPLY;
     }
 
     data.chatMode = 'survey_estimate_only';
@@ -338,7 +365,19 @@ export async function handleConversation(
   if (mode === 'survey') {
     const phoneInSurvey = normalizePhone(text);
     if (phoneInSurvey) {
+      data.invalidPhoneAttempt = undefined;
       return completePhoneOnlyLead(chatId, data, phoneInSurvey);
+    }
+    const invalidPhoneKey = getInvalidPhoneAttemptKey(text);
+    if (invalidPhoneKey) {
+      if (data.invalidPhoneAttempt === invalidPhoneKey) {
+        data.invalidPhoneAttempt = undefined;
+        return completePhoneOnlyLead(chatId, data, text.trim());
+      }
+      data.invalidPhoneAttempt = invalidPhoneKey;
+      appendTurn(data, text, [{ role: 'assistant', content: INVALID_PHONE_REPLY }]);
+      saveSession(chatId, LLM_STATE, data);
+      return INVALID_PHONE_REPLY;
     }
     data.chatMode = 'survey_estimate_only';
     logger.info({ chatId }, 'No phone in survey mode, switched to fixed estimate-only prompt');
