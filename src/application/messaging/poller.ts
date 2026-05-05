@@ -4,13 +4,12 @@ import { logger } from '../../core/logger.js';
 import {
   getChats,
   getChatMessages,
-  sendMessage,
   markChatRead,
   resolveUserId,
 } from '../../integrations/avito/client.js';
 import { formatAllowlistRejectLog } from '../../integrations/avito/peer-label.js';
 import { getRuntimeMode } from '../../infrastructure/storage/repository.js';
-import { processMessage } from './router.js';
+import { enqueueIncomingMessage } from './batched-dispatcher.js';
 
 const repliedMessages = new Set<string>();
 const MAX_CACHE = 10_000;
@@ -76,19 +75,7 @@ async function pollOnce(): Promise<void> {
       }
 
       logger.info({ chatId, msgId: msg.id, text }, '← incoming');
-      const reply = await processMessage(text, msg, chat);
-      if (!reply) {
-        logger.debug({ chatId, msgId: msg.id }, 'No handler matched, skipping');
-        repliedMessages.add(msg.id);
-        continue;
-      }
-
-      try {
-        await sendMessage(chatId, reply);
-        logger.info({ chatId, reply }, '→ replied');
-      } catch (err) {
-        logger.error({ err, chatId }, 'Failed to send reply');
-      }
+      enqueueIncomingMessage(chatId, text, msg, chat);
       repliedMessages.add(msg.id);
     }
 

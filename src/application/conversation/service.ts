@@ -324,6 +324,11 @@ export async function handleConversation(
   const history: LlmChatMessage[] = data.llmMessages ?? [];
 
   if (mode === 'phone_intent' && !history.some((m) => m.role === 'assistant')) {
+    const phoneFromFirstMessage = normalizePhone(text);
+    if (phoneFromFirstMessage) {
+      data.invalidPhoneAttempt = undefined;
+      return completePhoneOnlyLead(chatId, data, phoneFromFirstMessage);
+    }
     if (isWithoutPhoneChoiceText(text)) {
       data.chatMode = 'survey_estimate_only';
       logger.info({ chatId }, 'First message is price/estimate request — skipping phone prompt, going to estimate-only');

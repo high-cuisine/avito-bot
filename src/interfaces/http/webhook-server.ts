@@ -3,14 +3,13 @@ import { allowlistActive, shouldProcessSender } from '../../core/allowlist.js';
 import { config } from '../../core/config.js';
 import { logger } from '../../core/logger.js';
 import {
-  sendMessage,
   resolveUserId,
   subscribeWebhook,
   getChatById,
   type AvitoMessage,
 } from '../../integrations/avito/client.js';
 import { formatAllowlistRejectLog } from '../../integrations/avito/peer-label.js';
-import { processMessage } from '../../application/messaging/router.js';
+import { enqueueIncomingMessage } from '../../application/messaging/batched-dispatcher.js';
 import { getRuntimeMode } from '../../infrastructure/storage/repository.js';
 
 interface WebhookPayload {
@@ -56,19 +55,7 @@ export async function startWebhookServer(): Promise<void> {
     }
 
     logger.info({ chatId, authorId, text }, '← webhook message');
-
-    const reply = await processMessage(text, payload, undefined);
-    if (!reply) {
-      logger.debug({ chatId }, 'No handler matched');
-      return;
-    }
-
-    try {
-      await sendMessage(chatId, reply);
-      logger.info({ chatId, reply }, '→ replied');
-    } catch (err) {
-      logger.error({ err, chatId }, 'Failed to send reply');
-    }
+    enqueueIncomingMessage(chatId, text, payload, undefined);
   });
 
   app.get('/health', (_req: Request, res: Response) => {
