@@ -1,7 +1,28 @@
 import { Database } from 'bun:sqlite';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { logger } from '../../core/logger.js';
 
-const DB_PATH = process.env.DB_PATH || path.resolve(process.cwd(), 'data.db');
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+/**
+ * По умолчанию — `avito/data.db` рядом с пакетом (не от process.cwd).
+ * Иначе при запуске из разных папок админка и поллинг могли смотреть в разные файлы, и runtime_mode из /admin «не работал».
+ */
+const DEFAULT_DB_PATH = path.resolve(__dirname, '../../..', 'data.db');
+
+function resolveDbPath(): string {
+  const raw = process.env.DB_PATH?.trim();
+  if (!raw) return DEFAULT_DB_PATH;
+  if (raw === ':memory:') return ':memory:';
+  return path.isAbsolute(raw) ? raw : path.resolve(process.cwd(), raw);
+}
+
+const DB_PATH = resolveDbPath();
+
+/** Абсолютный путь к используемой БД (для логов и отладки). */
+export function getResolvedDataDbPath(): string {
+  return DB_PATH === ':memory:' ? ':memory:' : path.resolve(DB_PATH);
+}
 
 const db = new Database(DB_PATH, { create: true });
 db.exec('PRAGMA journal_mode = WAL');
@@ -326,7 +347,9 @@ export function getRuntimeMode(): RuntimeMode {
 
 export function setRuntimeMode(mode: RuntimeMode): RuntimeMode {
   stmtSetRuntimeMode.run(mode);
-  return getRuntimeMode();
+  const next = getRuntimeMode();
+  logger.info({ dbPath: getResolvedDataDbPath(), mode: next }, 'runtime_mode updated');
+  return next;
 }
 
 export function getClientsSince(since: string): ClientRecord[] {
@@ -474,3 +497,8 @@ export function clearDatabaseForTests(): void {
     DELETE FROM runtime_settings;
   `);
 }
+
+logger.info(
+  { dbPath: getResolvedDataDbPath(), runtimeMode: getRuntimeMode() },
+  'SQLite storage ready (sessions, clients, runtime_mode)',
+);

@@ -90,6 +90,28 @@ describe('conversation service templates', () => {
     expect(hours).toBe('Мы работаем в будни с 9-00 до 18-00 по Москве.');
   });
 
+  it('does not answer callback-hours on "ждем" after phone-only completion', async () => {
+    const { handleConversation } = await import('./service.js');
+    await handleConversation('ch-wait', 'привет');
+    await handleConversation('ch-wait', '+79000000000');
+
+    const reply = await handleConversation('ch-wait', 'ждем');
+    expect(reply).toBe(
+      'Спасибо за сообщение. Уточните, пожалуйста, ваш вопрос. Если хотите оформить новую перевозку, напишите маршрут, груз и вес.',
+    );
+  });
+
+  it('does not answer callback-hours on "спасибо" after phone-only completion', async () => {
+    const { handleConversation } = await import('./service.js');
+    await handleConversation('ch-thanks-msg', 'привет');
+    await handleConversation('ch-thanks-msg', '+79000000000');
+
+    const reply = await handleConversation('ch-thanks-msg', 'спасибо');
+    expect(reply).toBe(
+      'Спасибо за сообщение. Уточните, пожалуйста, ваш вопрос. Если хотите оформить новую перевозку, напишите маршрут, груз и вес.',
+    );
+  });
+
   it('asks clarifying question when client with saved phone writes again', async () => {
     saveClient({
       chatId: 'ch-engaged',

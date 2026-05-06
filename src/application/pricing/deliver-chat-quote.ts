@@ -4,7 +4,6 @@ import { sendMessage } from '../../integrations/avito/client.js';
 import {
   getChatEstimateById,
   getClientByChatId,
-  saveClient,
   saveSession,
   type ChatEstimateRecord,
   type SessionData,
@@ -33,8 +32,8 @@ function parsePriceFromBody(body: unknown): string {
 }
 
 /**
- * Отправляет в чат Avito цену, создаёт/обновляет clients без телефона
- * и переводит диалог в post_quote для анализа реакции клиента.
+ * Отправляет в чат Avito цену и переводит диалог в post_quote
+ * для анализа реакции клиента.
  */
 export async function deliverQuoteFromChatEstimateId(
   estimateId: number,
@@ -84,8 +83,7 @@ export async function deliverQuoteFromChatEstimateId(
     };
   }
 
-  const row: SessionData & { chatId: string } = {
-    chatId,
+  const sessionData: SessionData = {
     itemId: estimate.itemId ?? '',
     clientName: estimate.clientName ?? '',
     cargo: buildCargoForClient(estimate),
@@ -98,9 +96,8 @@ export async function deliverQuoteFromChatEstimateId(
   };
 
   try {
-    saveClient(row);
     saveSession(chatId, 'LLM', {
-      ...row,
+      ...sessionData,
       capturedPhone: undefined,
       llmMessages: [],
       chatMode: 'post_quote',
@@ -118,6 +115,6 @@ export async function deliverQuoteFromChatEstimateId(
     };
   }
 
-  logger.info({ chatId, estimateId }, 'deliver-quote: price sent, clients row without phone');
+  logger.info({ chatId, estimateId }, 'deliver-quote: price sent, waiting for phone before clients save');
   return { ok: true, status: 200, body: { ok: true, chat_id: chatId } };
 }

@@ -31,12 +31,13 @@ export const ESTIMATE_ONLY_START_PROMPT =
   '5.Форму оплаты(наличные,безнал б/ндс, безнал с НДС)\n' +
   '6.Сколько примерно в метрах займет Ваш груз в кузове у нас по длине пола(при ширине кузова 2.4 метра)';
 
-const CALLBACK_WORDS = /(когда|во\s*сколько|перезвон|позвон|свяж)/i;
+const CALLBACK_QUESTION_RE =
+  /((когда|во\s*сколько).{0,40}(перезвон|позвон|свяж))|((перезвон|позвон|свяж).{0,40}(когда|во\s*сколько))/i;
 
 export function isWhenCallbackQuestion(text: string): boolean {
   const clean = text.trim();
   if (!clean) return false;
-  return CALLBACK_WORDS.test(clean);
+  return CALLBACK_QUESTION_RE.test(clean);
 }
 
 const PRICE_QUERY_WORDS =

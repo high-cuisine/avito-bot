@@ -4,6 +4,7 @@ import {
   getSession,
   saveClient,
   saveSession,
+  upsertChatEstimateRequest,
 } from '../../infrastructure/storage/repository.js';
 
 vi.mock('../../integrations/webhook/submit-lead.js', () => ({
@@ -149,6 +150,25 @@ describe('execute-submit', () => {
     const { executeSubmitPhoneBackfill } = await import('./execute-submit.js');
     const r = await executeSubmitPhoneBackfill('missing', { phone: '+79001112233' });
     expect(r.ok).toBe(false);
+  });
+
+  it('executeSubmitPhoneBackfill creates clients row from chat-estimate context', async () => {
+    upsertChatEstimateRequest({
+      chatId: 'c-from-estimate',
+      itemId: 'it-1',
+      clientName: 'Клиент',
+      cargo: 'стекло',
+      weight: '2 т',
+      volume: '3 м3',
+      route: 'мск-спб',
+      paymentMethod: 'безнал',
+      details: 'хрупкий груз',
+    });
+    const { executeSubmitPhoneBackfill } = await import('./execute-submit.js');
+    const r = await executeSubmitPhoneBackfill('c-from-estimate', { phone: '89001112233' });
+    expect(r.ok).toBe(true);
+    const { getClientByChatId } = await import('../../infrastructure/storage/repository.js');
+    expect(getClientByChatId('c-from-estimate')?.phone).toBe('+79001112233');
   });
 
   it('executeDeclarePhoneContactPath sets survey', async () => {

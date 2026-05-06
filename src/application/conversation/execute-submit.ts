@@ -3,6 +3,8 @@ import { normalizePhone } from '../../core/phone.js';
 import { logger } from '../../core/logger.js';
 import { postSubmitWebhook } from '../../integrations/webhook/submit-lead.js';
 import {
+  getChatEstimateByChatId,
+  getClientByChatId,
   getSession,
   saveClient,
   saveSession,
@@ -226,13 +228,39 @@ export async function executeSubmitPhoneBackfill(
     };
   }
 
-  const updated = updateClientPhoneByChatId(chatId, phone);
-  if (!updated) {
-    return {
-      ok: false,
-      toolContent: toolJson(false, 'Не удалось обновить запись'),
-      persisted: false,
+  const existing = getClientByChatId(chatId);
+  if (existing) {
+    const updated = updateClientPhoneByChatId(chatId, phone);
+    if (!updated) {
+      return {
+        ok: false,
+        toolContent: toolJson(false, 'Не удалось обновить запись'),
+        persisted: false,
+      };
+    }
+  } else {
+    const session = getSession(chatId);
+    const fromEstimate = getChatEstimateByChatId(chatId);
+    if (!session && !fromEstimate) {
+      return {
+        ok: false,
+        toolContent: toolJson(false, 'Не удалось найти данные чата для сохранения телефона'),
+        persisted: false,
+      };
+    }
+    const row: SessionData & { chatId: string } = {
+      chatId,
+      itemId: session?.data.itemId || fromEstimate?.itemId || '',
+      clientName: session?.data.clientName || fromEstimate?.clientName || '',
+      cargo: session?.data.cargo || fromEstimate?.cargo || '',
+      weight: session?.data.weight || fromEstimate?.weight || '',
+      volume: session?.data.volume || fromEstimate?.volume || '',
+      cargoDetails: session?.data.cargoDetails || fromEstimate?.details || '',
+      route: session?.data.route || fromEstimate?.route || '',
+      paymentMethod: session?.data.paymentMethod || fromEstimate?.paymentMethod || '',
+      phone,
     };
+    saveClient(row);
   }
 
   const whOk = await postSubmitWebhook({

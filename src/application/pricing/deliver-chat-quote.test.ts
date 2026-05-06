@@ -60,7 +60,7 @@ describe('deliverQuoteFromChatEstimateId', () => {
     expect(sendMessage).not.toHaveBeenCalled();
   });
 
-  it('sends message and creates clients row without phone', async () => {
+  it('sends message and keeps data only in chat-estimates until phone', async () => {
     upsertChatEstimateRequest({
       chatId: 'ch-ok',
       itemId: 'it99',
@@ -82,10 +82,7 @@ describe('deliverQuoteFromChatEstimateId', () => {
     expect(sendMessage).toHaveBeenCalledWith('ch-ok', expect.stringContaining('125000'));
     expect(sendMessage).not.toHaveBeenCalledWith('ch-ok', expect.stringContaining('номер телефона'));
     const client = getClientByChatId('ch-ok');
-    expect(client?.phone).toBeNull();
-    expect(client?.cargo).toContain('кирпич');
-    expect(client?.cargo).toContain('Дополнительно: 2 т');
-    expect(client?.cargoDetails).toBe('2 т');
+    expect(client).toBeNull();
     const session = getSession('ch-ok');
     expect(session?.data.chatMode).toBe('post_quote');
     expect(session?.data.postQuotePhase).toBe('awaiting_sentiment');
