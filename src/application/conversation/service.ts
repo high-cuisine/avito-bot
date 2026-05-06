@@ -11,15 +11,18 @@ import { executeSubmitPhoneBackfill } from './execute-submit.js';
 import {
   CALLBACK_HOURS_COLON,
   CALLBACK_HOURS_DASH,
+  ENGAGED_THANKS_REPLY,
   ENGAGED_REOPEN_PROMPT,
   ESTIMATE_WAITING_REPLY,
   ESTIMATE_ONLY_START_PROMPT,
   OUTSIDE_HOURS_REPLY,
+  PHONE_INTENT_FOLLOWUP_REPLY,
   PHONE_INTENT_OPENING_REPLY,
   POST_QUOTE_NEGATIVE_REPLY,
   POST_QUOTE_PHONE_PROMPT,
   THANKS_CALLBACK_SOON,
   isPriceQuery,
+  isGratitudeLike,
   isWhenCallbackQuestion,
   isWorkingHoursMoscow,
 } from './copy.js';
@@ -439,9 +442,9 @@ export async function handleConversation(
       saveSession(chatId, LLM_STATE, data);
       return scriptReply;
     }
-    appendTurn(data, text, [{ role: 'assistant', content: PHONE_INTENT_OPENING_REPLY }]);
+    appendTurn(data, text, [{ role: 'assistant', content: PHONE_INTENT_FOLLOWUP_REPLY }]);
     saveSession(chatId, LLM_STATE, data);
-    return PHONE_INTENT_OPENING_REPLY;
+    return PHONE_INTENT_FOLLOWUP_REPLY;
   }
 
   if (mode === 'survey') {
@@ -524,6 +527,11 @@ export async function handleConversation(
   }
 
   if (mode === 'engaged' && !history.some((m) => m.role === 'assistant')) {
+    if (isGratitudeLike(text)) {
+      appendTurn(data, text, [{ role: 'assistant', content: ENGAGED_THANKS_REPLY }]);
+      saveSession(chatId, LLM_STATE, data);
+      return ENGAGED_THANKS_REPLY;
+    }
     appendTurn(data, text, [{ role: 'assistant', content: ENGAGED_REOPEN_PROMPT }]);
     saveSession(chatId, LLM_STATE, data);
     return ENGAGED_REOPEN_PROMPT;
@@ -544,6 +552,19 @@ export async function handleConversation(
     appendTurn(data, text, [{ role: 'assistant', content: ESTIMATE_ONLY_START_PROMPT }]);
     saveSession(chatId, LLM_STATE, data);
     return ESTIMATE_ONLY_START_PROMPT;
+  }
+
+  if (mode === 'survey_estimate_only') {
+    const phone = normalizePhone(text);
+    if (phone) {
+      const exec = await executeSubmitPhoneBackfill(chatId, { phone });
+      if (!exec.ok) {
+        logger.warn({ chatId, toolContent: exec.toolContent }, 'Estimate-only phone save failed');
+        return 'Не удалось сохранить номер. Пришлите, пожалуйста, номер в формате +7XXXXXXXXXX.';
+      }
+      deleteSession(chatId);
+      return THANKS_CALLBACK_SOON;
+    }
   }
 
   const knownPhoneNorm =

@@ -1,4 +1,7 @@
 export const PHONE_INTENT_OPENING_REPLY =
+  'Здравствуйте. Напишите свой номер телефона, свяжемся с Вами и обсудим детали грузоперевозки.';
+
+export const PHONE_INTENT_FOLLOWUP_REPLY =
   'Напишите свой номер телефона, свяжемся с Вами и обсудим детали грузоперевозки.';
 
 export const THANKS_CALLBACK_SOON = 'Спасибо, мы перезвоним вам в ближайшее время.';
@@ -20,7 +23,10 @@ export const ESTIMATE_WAITING_REPLY =
   'Ожидайте, пожалуйста: как только расчет цены будет готов, мы сразу ответим вам в этом чате.';
 
 export const ENGAGED_REOPEN_PROMPT =
-  'Спасибо за сообщение. Уточните, пожалуйста, ваш вопрос. Если хотите оформить новую перевозку, напишите маршрут, груз и вес.';
+  'Спасибо за сообщение. Уточните, пожалуйста, ваш вопрос.';
+
+export const ENGAGED_THANKS_REPLY =
+  'Пожалуйста! Если появятся вопросы по текущей перевозке, напишите — подскажу.';
 
 export const ESTIMATE_ONLY_START_PROMPT =
   'Хорошо, считаем в чате без номера. Напишите, пожалуйста: \n' +
@@ -38,6 +44,14 @@ export function isWhenCallbackQuestion(text: string): boolean {
   const clean = text.trim();
   if (!clean) return false;
   return CALLBACK_QUESTION_RE.test(clean);
+}
+
+const GRATITUDE_RE = /(спасибо|благодар|понял|ок|хорошо|отлично|принято)/i;
+
+export function isGratitudeLike(text: string): boolean {
+  const clean = text.trim();
+  if (!clean) return false;
+  return GRATITUDE_RE.test(clean);
 }
 
 const PRICE_QUERY_WORDS =
