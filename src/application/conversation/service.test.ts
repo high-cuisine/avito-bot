@@ -293,6 +293,27 @@ describe('conversation service templates', () => {
     expect(runLlmTurn).not.toHaveBeenCalled();
   });
 
+  it('treats pallet count as volume and floor-length data', async () => {
+    const { handleConversation } = await import('./service.js');
+    await handleConversation(
+      'ch-pallets',
+      'добрый день, нужна перевозка спб москва стекло 2 тонны наличка',
+    );
+    const first = await handleConversation('ch-pallets', 'детали все есть');
+    expect(first).toContain('объем');
+    expect(first).toContain('сколько метров по длине пола займет груз в кузове');
+
+    runLlmTurn.mockResolvedValueOnce({
+      reply: 'Принято, зафиксировал. Если все верно, передаю заявку на расчет.',
+      newHistoryEntries: [{ role: 'assistant', content: 'Принято, зафиксировал. Если все верно, передаю заявку на расчет.' }],
+      sessionEnded: false,
+    });
+    const second = await handleConversation('ch-pallets', '5 палетов');
+    expect(second).toBe('Принято, зафиксировал. Если все верно, передаю заявку на расчет.');
+    expect(second).not.toContain('объем');
+    expect(second).not.toContain('сколько метров по длине пола займет груз в кузове');
+  });
+
   it('switches to estimate-only mode on "второй вариант"', async () => {
     const { handleConversation } = await import('./service.js');
     await handleConversation('ch-second-option', 'привет');

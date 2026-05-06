@@ -107,6 +107,7 @@ const INVALID_PHONE_REPLY = 'Ваш номер указан не верно, п�
 const PAYMENT_RE = /(налич|безнал|ндс|с\s*ндс|б\/ндс)/i;
 const VOLUME_RE = /(об[ъь]?[её]м|м3|куб|кубометр)/i;
 const FLOOR_METERS_RE = /(метр|по\s+длине\s+пола|длина\s+пола|в\s+кузове)/i;
+const PALLET_RE = /(\d+[\s.,]*)?(палет|паллет|паллета|паллеты|паллетов|поддон|поддона|поддонов)/i;
 
 function isPhoneRefusalText(text: string): boolean {
   if (!text) return false;
@@ -187,9 +188,10 @@ function buildEstimateOnlyFollowupFromText(text: string): string | null {
     );
   const hasCargo = normalized.some((l) => /(груз|стекл|мебел|оборуд|короб|паллет|товар)/.test(l));
   const hasWeight = normalized.some((l) => /(вес|кг|тонн|тн|т\.)/.test(l));
-  const hasVolume = normalized.some((l) => VOLUME_RE.test(l));
+  const hasPalletInfo = normalized.some((l) => PALLET_RE.test(l));
+  const hasVolume = normalized.some((l) => VOLUME_RE.test(l)) || hasPalletInfo;
   const hasPayment = normalized.some((l) => PAYMENT_RE.test(l));
-  const hasFloorMeters = normalized.some((l) => FLOOR_METERS_RE.test(l));
+  const hasFloorMeters = normalized.some((l) => FLOOR_METERS_RE.test(l)) || hasPalletInfo;
   const providedCount = [hasRoute, hasCargo, hasWeight, hasVolume, hasPayment, hasFloorMeters].filter(Boolean).length;
   if (providedCount === 0) return null;
 
