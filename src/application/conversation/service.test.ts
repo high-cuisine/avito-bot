@@ -75,10 +75,9 @@ describe('conversation service templates', () => {
 
   it('accepts phone from the very first message', async () => {
     const { handleConversation } = await import('./service.js');
-    const thanks = await handleConversation('ch-first-phone', 'добрый день, мой номер 8 (900) 555-44-33');
-    expect(thanks).toBe('Спасибо, мы перезвоним вам в ближайшее время.');
-    expect(getSession('ch-first-phone')).toBeNull();
-    expect(getClientByChatId('ch-first-phone')?.phone).toBe('+79005554433');
+    const reply = await handleConversation('ch-first-phone', 'добрый день, мой номер 8 (900) 555-44-33');
+    expect(reply).toBe('Здравствуйте. Напишите свой номер телефона, свяжемся с Вами и обсудим детали грузоперевозки.');
+    expect(getSession('ch-first-phone')?.data.chatMode).toBe('phone_intent');
   });
 
   it('answers callback-hours after phone-only completion', async () => {
@@ -219,9 +218,9 @@ describe('conversation service templates', () => {
     const { handleConversation } = await import('./service.js');
     await handleConversation('ch-any-non-phone', 'привет');
     const reply = await handleConversation('ch-any-non-phone', 'давайте обсудим тут');
-    expect(reply).toBe(ESTIMATE_ONLY_PROMPT);
+    expect(reply).toBe('Здравствуйте. Напишите свой номер телефона, свяжемся с Вами и обсудим детали грузоперевозки.');
     expect(runLlmTurn).not.toHaveBeenCalled();
-    expect(getSession('ch-any-non-phone')?.data.chatMode).toBe('survey_estimate_only');
+    expect(getSession('ch-any-non-phone')?.data.chatMode).toBe('phone_intent');
   });
 
   it('returns invalid phone message and waits for retry', async () => {
@@ -256,16 +255,17 @@ describe('conversation service templates', () => {
       'ch-first-price',
       'добрый день\nпосчитайте стоимость\nмск спб\nстекло\n2 тонны',
     );
-    expect(reply).toContain('Для расчета в чате без номера уточните, пожалуйста:');
+    expect(reply).toBe('Здравствуйте. Напишите свой номер телефона, свяжемся с Вами и обсудим детали грузоперевозки.');
     expect(runLlmTurn).not.toHaveBeenCalled();
   });
 
-  it('asks only missing estimate fields when first message already contains partial data', async () => {
+  it('asks only missing estimate fields from previously sent data after phone refusal', async () => {
     const { handleConversation } = await import('./service.js');
-    const reply = await handleConversation(
+    await handleConversation(
       'ch-first-partial-estimate',
       'добрый день\nпосчитайте стоимость\nмск спб\nстекло\n2 тонны',
     );
+    const reply = await handleConversation('ch-first-partial-estimate', 'номер не дам');
     expect(reply).toContain('Для расчета в чате без номера уточните, пожалуйста:');
     expect(reply).toContain('объем');
     expect(reply).toContain('форму оплаты');

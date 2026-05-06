@@ -193,6 +193,15 @@ function buildEstimateOnlyFollowupFromText(text: string): string | null {
   return `Принято. Для расчета в чате без номера уточните, пожалуйста: ${missing.join(', ')}.`;
 }
 
+function collectUserTextForEstimate(history: LlmChatMessage[], currentText: string): string {
+  const previous = history
+    .filter((m): m is Extract<LlmChatMessage, { role: 'user' }> => m.role === 'user')
+    .map((m) => m.content.trim())
+    .filter(Boolean)
+    .join('\n');
+  return previous ? `${previous}\n${currentText}` : currentText;
+}
+
 function emptyData(): SessionData {
   return {
     itemId: '',
@@ -373,24 +382,9 @@ export async function handleConversation(
   const history: LlmChatMessage[] = data.llmMessages ?? [];
 
   if (mode === 'phone_intent' && !history.some((m) => m.role === 'assistant')) {
-    const phoneFromFirstMessage = normalizePhone(text);
-    if (phoneFromFirstMessage) {
-      data.invalidPhoneAttempt = undefined;
-      return completePhoneOnlyLead(chatId, data, phoneFromFirstMessage);
-    }
-    if (isWithoutPhoneChoiceText(text)) {
-      data.chatMode = 'survey_estimate_only';
-      logger.info({ chatId }, 'First message is price/estimate request — skipping phone prompt, going to estimate-only');
-      const followup = buildEstimateOnlyFollowupFromText(text);
-      const scriptReply = followup ?? ESTIMATE_ONLY_START_PROMPT;
-      appendTurn(data, text, [{ role: 'assistant', content: scriptReply }]);
-      saveSession(chatId, LLM_STATE, data);
-      return scriptReply;
-    } else {
-      appendTurn(data, text, [{ role: 'assistant', content: PHONE_INTENT_OPENING_REPLY }]);
-      saveSession(chatId, LLM_STATE, data);
-      return PHONE_INTENT_OPENING_REPLY;
-    }
+    appendTurn(data, text, [{ role: 'assistant', content: PHONE_INTENT_OPENING_REPLY }]);
+    saveSession(chatId, LLM_STATE, data);
+    return PHONE_INTENT_OPENING_REPLY;
   }
 
   if (mode === 'phone_intent' && history.some((m) => m.role === 'assistant')) {
@@ -411,21 +405,19 @@ export async function handleConversation(
       return INVALID_PHONE_REPLY;
     }
 
-    if (hasMeaningfulText(text)) {
+    if (isWithoutPhoneChoiceText(text)) {
       data.chatMode = 'survey_estimate_only';
-      const followup = buildEstimateOnlyFollowupFromText(text);
+      const collected = collectUserTextForEstimate(history, text);
+      const followup = buildEstimateOnlyFollowupFromText(collected);
       const scriptReply = followup ?? ESTIMATE_ONLY_START_PROMPT;
-      logger.info({ chatId }, 'Phone not provided in phone_intent, switched to estimate-only followup');
+      logger.info({ chatId }, 'Client declined phone in phone_intent, switched to estimate-only mode');
       appendTurn(data, text, [{ role: 'assistant', content: scriptReply }]);
       saveSession(chatId, LLM_STATE, data);
       return scriptReply;
     }
-
-    data.chatMode = 'survey_estimate_only';
-    logger.info({ chatId }, 'Phone not provided in phone_intent, switched to fixed estimate-only prompt');
-    appendTurn(data, text, [{ role: 'assistant', content: ESTIMATE_ONLY_START_PROMPT }]);
+    appendTurn(data, text, [{ role: 'assistant', content: PHONE_INTENT_OPENING_REPLY }]);
     saveSession(chatId, LLM_STATE, data);
-    return ESTIMATE_ONLY_START_PROMPT;
+    return PHONE_INTENT_OPENING_REPLY;
   }
 
   if (mode === 'survey') {
