@@ -79,6 +79,16 @@ describe('execute-submit', () => {
   });
 
   it('executeSubmitChatEstimateRequest persists without phone', async () => {
+    saveSession('c-est', 'LLM', {
+      itemId: 'it2',
+      clientName: 'Олег',
+      cargo: '',
+      route: '',
+      paymentMethod: '',
+      phone: '',
+      chatMode: 'survey_estimate_only',
+      llmMessages: [{ role: 'user', content: 'Все загрузят и выгрузят за 5 точек, 93км.' }],
+    });
     const { executeSubmitChatEstimateRequest } = await import('./execute-submit.js');
     const r = await executeSubmitChatEstimateRequest(
       'c-est',
@@ -97,7 +107,11 @@ describe('execute-submit', () => {
       '../../infrastructure/storage/repository.js'
     );
     expect(getClientByChatId('c-est')).toBeNull();
-    expect(getChatEstimates().some((e) => e.chatId === 'c-est')).toBe(true);
+    const row = getChatEstimates().find((e) => e.chatId === 'c-est');
+    expect(row).toBeTruthy();
+    expect(row?.details).toContain('важно');
+    expect(row?.details).toContain('Полный текст клиента:');
+    expect(row?.details).toContain('Все загрузят и выгрузят за 5 точек, 93км.');
   });
 
   it('executeSubmitChatEstimateRequest persists when volume is missing', async () => {

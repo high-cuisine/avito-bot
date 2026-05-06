@@ -25,6 +25,23 @@ function toolJson(ok: boolean, message: string, extra?: Record<string, unknown>)
   return JSON.stringify({ ok, message, ...extra });
 }
 
+function composeDetailsWithClientRaw(
+  chatId: string,
+  details: string | null,
+): string | null {
+  const session = getSession(chatId);
+  const rawClientText = (session?.data.llmMessages ?? [])
+    .filter((m) => m.role === 'user')
+    .map((m) => String(m.content ?? '').trim())
+    .filter(Boolean)
+    .join('\n');
+  if (!rawClientText) return details;
+  const block = `Полный текст клиента:\n${rawClientText}`;
+  if (!details) return block;
+  if (details.includes(rawClientText)) return details;
+  return `${details}\n\n${block}`;
+}
+
 export async function executeDeclarePhoneContactPath(
   chatId: string,
   rawArgs: unknown,
@@ -158,8 +175,9 @@ export async function executeSubmitChatEstimateRequest(
   const payment_method = String(a.payment_method ?? a.paymentMethod ?? '').trim();
   const client_name = String(a.client_name ?? a.clientName ?? sessionDefaults.clientName ?? '').trim();
   const detailsRaw = a.details ?? a.extra_details;
-  const details =
+  const detailsBase =
     detailsRaw !== undefined && detailsRaw !== null ? String(detailsRaw).trim() || null : null;
+  const details = composeDetailsWithClientRaw(chatId, detailsBase);
 
   const validation = validateChatEstimateFields({ route, cargo, weight, payment_method });
   if (!validation.ok) {

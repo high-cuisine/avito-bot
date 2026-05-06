@@ -309,6 +309,14 @@ describe('conversation service templates', () => {
     expect(runLlmTurn).not.toHaveBeenCalled();
   });
 
+  it('switches to estimate-only mode on indirect refusal "детали все указаны"', async () => {
+    const { handleConversation } = await import('./service.js');
+    await handleConversation('ch-indirect-refuse', 'привет');
+    const reply = await handleConversation('ch-indirect-refuse', 'детали все указаны');
+    expect(reply).toBe(ESTIMATE_ONLY_PROMPT);
+    expect(runLlmTurn).not.toHaveBeenCalled();
+  });
+
   it('does not spam estimate-only prompt after it was already sent', async () => {
     runLlmTurn.mockResolvedValueOnce({
       reply: 'Уточните, пожалуйста, вес груза и форму оплаты.',
