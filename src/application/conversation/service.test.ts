@@ -314,6 +314,33 @@ describe('conversation service templates', () => {
     expect(second).not.toContain('сколько метров по длине пола займет груз в кузове');
   });
 
+  it('overrides llm retry when pallets already provided', async () => {
+    runLlmTurn.mockResolvedValueOnce({
+      reply:
+        'Пожалуйста, уточните ещё, какой объём занимает груз и сколько метров по длине пола в кузове он займёт?',
+      newHistoryEntries: [
+        {
+          role: 'assistant',
+          content:
+            'Пожалуйста, уточните ещё, какой объём занимает груз и сколько метров по длине пола в кузове он займёт?',
+        },
+      ],
+      sessionEnded: false,
+    });
+    saveSession('ch-pallet-override', 'LLM', {
+      ...LLM_DATA_BASE,
+      chatMode: 'survey_estimate_only',
+      llmMessages: [
+        { role: 'user', content: 'мск спб стекло' },
+        { role: 'assistant', content: 'Принято. Для расчета в чате без номера уточните, пожалуйста: вес, объем, форму оплаты, сколько метров по длине пола займет груз в кузове.' },
+      ],
+    });
+    const { handleConversation } = await import('./service.js');
+    const reply = await handleConversation('ch-pallet-override', 'вес тонна суммарно\nналичка\n5 палетов');
+    expect(reply).not.toContain('объём');
+    expect(reply).not.toContain('по длине пола');
+  });
+
   it('switches to estimate-only mode on "второй вариант"', async () => {
     const { handleConversation } = await import('./service.js');
     await handleConversation('ch-second-option', 'привет');

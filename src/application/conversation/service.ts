@@ -216,6 +216,16 @@ function collectUserTextForEstimate(history: LlmChatMessage[], currentText: stri
   return previous ? `${previous}\n${currentText}` : currentText;
 }
 
+function asksVolumeOrFloor(reply: string): boolean {
+  const t = reply.toLowerCase();
+  return /об[ъь]?[её]м|куб|м3|длин[аы]\s+по\s+полу|по\s+длине\s+пола|в\s+кузове/.test(t);
+}
+
+function asksCoreEstimateFields(reply: string): boolean {
+  const t = reply.toLowerCase();
+  return /маршрут|характер\s+груза|вес|форму\s+оплаты/.test(t);
+}
+
 function emptyData(): SessionData {
   return {
     itemId: '',
@@ -571,5 +581,16 @@ export async function handleConversation(
   }
 
   const finalMode = data.chatMode ?? llmMode;
-  return enforceNoPhoneInEstimateMode(finalMode, result.reply);
+  const finalReply = enforceNoPhoneInEstimateMode(finalMode, result.reply);
+  if (finalMode === 'survey_estimate_only' && PALLET_RE.test(text) && asksVolumeOrFloor(finalReply)) {
+    const collected = collectUserTextForEstimate(history, text);
+    const scripted = buildEstimateOnlyFollowupFromText(collected);
+    if (scripted && !asksVolumeOrFloor(scripted) && !asksCoreEstimateFields(scripted)) {
+      return scripted;
+    }
+    if (!scripted) {
+      return 'Принято, палеты учтены как длина по полу. Если всё верно, подтверждайте, и я передам заявку на расчет.';
+    }
+  }
+  return finalReply;
 }
