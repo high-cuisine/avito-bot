@@ -276,6 +276,23 @@ describe('conversation service templates', () => {
     expect(runLlmTurn).not.toHaveBeenCalled();
   });
 
+  it('switches to estimate-only on short "расчитайте" after phone prompt and uses prior data', async () => {
+    const { handleConversation } = await import('./service.js');
+    await handleConversation(
+      'ch-short-calc-request',
+      'добрый день, нужна перевозка спб москва стекло 2 тонны 2 куба наличка',
+    );
+    const reply = await handleConversation('ch-short-calc-request', 'расчитайте');
+    expect(reply).toContain('Для расчета в чате без номера уточните, пожалуйста:');
+    expect(reply).toContain('сколько метров по длине пола займет груз в кузове');
+    expect(reply).not.toContain('маршрут');
+    expect(reply).not.toContain('характер груза');
+    expect(reply).not.toContain('вес');
+    expect(reply).not.toContain('объем');
+    expect(reply).not.toContain('форму оплаты');
+    expect(runLlmTurn).not.toHaveBeenCalled();
+  });
+
   it('switches to estimate-only mode on "второй вариант"', async () => {
     const { handleConversation } = await import('./service.js');
     await handleConversation('ch-second-option', 'привет');
