@@ -334,6 +334,27 @@ describe('conversation service templates', () => {
     expect(runLlmTurn).toHaveBeenCalledOnce();
   });
 
+  it('does not reset to fixed estimate-only prompt after custom follow-up was sent', async () => {
+    runLlmTurn.mockResolvedValueOnce({
+      reply: 'Принято, данных достаточно. Уточните только точный объем в м3.',
+      newHistoryEntries: [
+        { role: 'assistant', content: 'Принято, данных достаточно. Уточните только точный объем в м3.' },
+      ],
+      sessionEnded: false,
+    });
+    saveSession('ch-est-custom-followup', 'LLM', {
+      ...LLM_DATA_BASE,
+      chatMode: 'survey_estimate_only',
+      llmMessages: [{ role: 'assistant', content: 'Принято. Для расчета в чате без номера уточните, пожалуйста: объем.' }],
+    });
+
+    const { handleConversation } = await import('./service.js');
+    const reply = await handleConversation('ch-est-custom-followup', '5 палетов');
+    expect(reply).toBe('Принято, данных достаточно. Уточните только точный объем в м3.');
+    expect(reply).not.toBe(ESTIMATE_ONLY_PROMPT);
+    expect(runLlmTurn).toHaveBeenCalledOnce();
+  });
+
   it('strips markdown stars from estimate-only follow-up text', async () => {
     runLlmTurn.mockResolvedValueOnce({
       reply:

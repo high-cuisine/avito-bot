@@ -136,8 +136,8 @@ function enforceNoPhoneInEstimateMode(mode: SessionData['chatMode'], reply: stri
   return cleaned;
 }
 
-function hasEstimateOnlyPromptInHistory(history: LlmChatMessage[]): boolean {
-  return history.some((m) => m.role === 'assistant' && m.content === ESTIMATE_ONLY_START_PROMPT);
+function hasAnyAssistantHistory(history: LlmChatMessage[]): boolean {
+  return history.some((m) => m.role === 'assistant');
 }
 
 function extractPhoneLikeDigits(text: string): string | null {
@@ -523,7 +523,7 @@ export async function handleConversation(
     return ESTIMATE_WAITING_REPLY;
   }
 
-  if (mode === 'survey_estimate_only' && !hasEstimateOnlyPromptInHistory(history)) {
+  if (mode === 'survey_estimate_only' && !hasAnyAssistantHistory(history)) {
     appendTurn(data, text, [{ role: 'assistant', content: ESTIMATE_ONLY_START_PROMPT }]);
     saveSession(chatId, LLM_STATE, data);
     return ESTIMATE_ONLY_START_PROMPT;
