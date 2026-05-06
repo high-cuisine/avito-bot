@@ -3,7 +3,7 @@ import type { AvitoChat, AvitoMessage } from '../../integrations/avito/client.js
 import { sendMessage } from '../../integrations/avito/client.js';
 import { processMessage } from './router.js';
 
-const BATCH_DELAY_MS = 2 * 60 * 1000;
+const BATCH_DELAY_MS = 60 * 1000;
 
 type ChatBatch = {
   parts: string[];

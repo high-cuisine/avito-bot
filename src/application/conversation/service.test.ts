@@ -66,7 +66,7 @@ describe('conversation service templates', () => {
   it('uses strict opening and phone-only thank you', async () => {
     const { handleConversation } = await import('./service.js');
     const opening = await handleConversation('ch-1', 'привет');
-    expect(opening).toBe('Здравствуйте. Напишите свой номер телефона, свяжемся с Вами и обсудим детали грузоперевозки.');
+    expect(opening).toBe('Напишите свой номер телефона, свяжемся с Вами и обсудим детали грузоперевозки.');
 
     const thanks = await handleConversation('ch-1', '+79000000000');
     expect(thanks).toBe('Спасибо, мы перезвоним вам в ближайшее время.');
@@ -76,7 +76,7 @@ describe('conversation service templates', () => {
   it('accepts phone from the very first message', async () => {
     const { handleConversation } = await import('./service.js');
     const reply = await handleConversation('ch-first-phone', 'добрый день, мой номер 8 (900) 555-44-33');
-    expect(reply).toBe('Здравствуйте. Напишите свой номер телефона, свяжемся с Вами и обсудим детали грузоперевозки.');
+    expect(reply).toBe('Напишите свой номер телефона, свяжемся с Вами и обсудим детали грузоперевозки.');
     expect(getSession('ch-first-phone')?.data.chatMode).toBe('phone_intent');
   });
 
@@ -218,7 +218,7 @@ describe('conversation service templates', () => {
     const { handleConversation } = await import('./service.js');
     await handleConversation('ch-any-non-phone', 'привет');
     const reply = await handleConversation('ch-any-non-phone', 'давайте обсудим тут');
-    expect(reply).toBe('Здравствуйте. Напишите свой номер телефона, свяжемся с Вами и обсудим детали грузоперевозки.');
+    expect(reply).toBe('Напишите свой номер телефона, свяжемся с Вами и обсудим детали грузоперевозки.');
     expect(runLlmTurn).not.toHaveBeenCalled();
     expect(getSession('ch-any-non-phone')?.data.chatMode).toBe('phone_intent');
   });
@@ -255,7 +255,7 @@ describe('conversation service templates', () => {
       'ch-first-price',
       'добрый день\nпосчитайте стоимость\nмск спб\nстекло\n2 тонны',
     );
-    expect(reply).toBe('Здравствуйте. Напишите свой номер телефона, свяжемся с Вами и обсудим детали грузоперевозки.');
+    expect(reply).toBe('Напишите свой номер телефона, свяжемся с Вами и обсудим детали грузоперевозки.');
     expect(runLlmTurn).not.toHaveBeenCalled();
   });
 
