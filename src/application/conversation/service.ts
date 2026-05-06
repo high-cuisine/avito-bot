@@ -91,10 +91,15 @@ const ESTIMATE_ONLY_HINTS = [
   'без телефона',
   'детали все указаны',
   'детали указаны',
+  'детали все есть',
+  'детали есть',
   'все данные указаны',
+  'все данные есть',
   'все данные выше',
   'данные все указаны',
 ];
+const ESTIMATE_ONLY_INDIRECT_RE =
+  /((детал[ьи]).{0,20}(все\s*)?(есть|указан))|((все\s+данн(ые|ая)).{0,20}(есть|указан))/i;
 
 const PHONE_REQUEST_PATTERN =
   /(напиш|укаж|пришл|остав(ь|ьте)).{0,40}(номер|телефон)|(номер|телефон).{0,40}(\+7|8\d{10})/i;
@@ -118,7 +123,7 @@ function isPriceFirstRequestText(text: string): boolean {
 function isEstimateOnlyChoiceText(text: string): boolean {
   if (!text) return false;
   const normalized = text.toLowerCase().replace(/\s+/g, ' ').trim();
-  return ESTIMATE_ONLY_HINTS.some((hint) => normalized.includes(hint));
+  return ESTIMATE_ONLY_HINTS.some((hint) => normalized.includes(hint)) || ESTIMATE_ONLY_INDIRECT_RE.test(normalized);
 }
 
 function isWithoutPhoneChoiceText(text: string): boolean {
