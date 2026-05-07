@@ -239,6 +239,24 @@ describe('conversation service templates', () => {
     expect(getSession('ch-any-non-phone')?.data.chatMode).toBe('phone_intent');
   });
 
+  it('switches to estimate-only mode on short refusal "нет"', async () => {
+    const { handleConversation } = await import('./service.js');
+    await handleConversation('ch-short-no', 'привет');
+    const reply = await handleConversation('ch-short-no', 'нет');
+    expect(reply).toBe(ESTIMATE_ONLY_PROMPT);
+    expect(getSession('ch-short-no')?.data.chatMode).toBe('survey_estimate_only');
+    expect(runLlmTurn).not.toHaveBeenCalled();
+  });
+
+  it('switches to estimate-only mode on short refusal "не хочу"', async () => {
+    const { handleConversation } = await import('./service.js');
+    await handleConversation('ch-short-no-want', 'привет');
+    const reply = await handleConversation('ch-short-no-want', 'не хочу');
+    expect(reply).toBe(ESTIMATE_ONLY_PROMPT);
+    expect(getSession('ch-short-no-want')?.data.chatMode).toBe('survey_estimate_only');
+    expect(runLlmTurn).not.toHaveBeenCalled();
+  });
+
   it('returns invalid phone message and waits for retry', async () => {
     const { handleConversation } = await import('./service.js');
     await handleConversation('ch-invalid-phone', 'привет');

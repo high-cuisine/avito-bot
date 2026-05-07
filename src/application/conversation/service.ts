@@ -67,6 +67,7 @@ const PHONE_REFUSAL_HINTS = [
 ];
 const PHONE_REFUSAL_RE =
   /(без\s*(номера|телефона))|((не\s*хоч|не\s*буд|не\s*мог|не\s*готов).{0,30}(да(ва|ть)|остав(ля|ить)|писа(ть|ть)|указыва(ть|ть)).{0,20}(номер|телефон))|((номер|телефон).{0,20}(не\s*дам|не\s*даю|не\s*оставлю))/i;
+const SHORT_REFUSAL_RE = /^(нет|неа|не хочу|не будем|не нужно|отказываюсь)(\s|$|[!.,?])/i;
 
 const PRICE_FIRST_HINTS = [
   'посчитайте цену',
@@ -129,7 +130,13 @@ function isEstimateOnlyChoiceText(text: string): boolean {
 }
 
 function isWithoutPhoneChoiceText(text: string): boolean {
-  return isPhoneRefusalText(text) || isPriceFirstRequestText(text) || isEstimateOnlyChoiceText(text);
+  const normalized = text.trim();
+  return (
+    isPhoneRefusalText(normalized) ||
+    isPriceFirstRequestText(normalized) ||
+    isEstimateOnlyChoiceText(normalized) ||
+    SHORT_REFUSAL_RE.test(normalized)
+  );
 }
 
 function enforceNoPhoneInEstimateMode(mode: SessionData['chatMode'], reply: string): string {
