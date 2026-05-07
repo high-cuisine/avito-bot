@@ -14,6 +14,7 @@ import {
   ENGAGED_THANKS_REPLY,
   ENGAGED_REOPEN_PROMPT,
   ESTIMATE_WAITING_REPLY,
+  ESTIMATE_WAITING_THANKS_REPLY,
   ESTIMATE_ONLY_START_PROMPT,
   PHONE_INTENT_FOLLOWUP_REPLY,
   PHONE_INTENT_OPENING_REPLY,
@@ -538,10 +539,25 @@ export async function handleConversation(
   }
 
   if (mode === 'estimate_wait') {
+    const phone = normalizePhone(text);
+    if (phone) {
+      const exec = await executeSubmitPhoneBackfill(chatId, { phone });
+      if (!exec.ok) {
+        logger.warn({ chatId, toolContent: exec.toolContent }, 'Estimate-wait phone save failed');
+        return 'Не удалось сохранить номер. Пришлите, пожалуйста, номер в формате +7XXXXXXXXXX.';
+      }
+      deleteSession(chatId);
+      return THANKS_CALLBACK_SOON;
+    }
     if (isWhenCallbackQuestion(text)) {
       appendTurn(data, text, [{ role: 'assistant', content: CALLBACK_HOURS_COLON }]);
       saveSession(chatId, LLM_STATE, data);
       return CALLBACK_HOURS_COLON;
+    }
+    if (isGratitudeLike(text)) {
+      appendTurn(data, text, [{ role: 'assistant', content: ESTIMATE_WAITING_THANKS_REPLY }]);
+      saveSession(chatId, LLM_STATE, data);
+      return ESTIMATE_WAITING_THANKS_REPLY;
     }
     appendTurn(data, text, [{ role: 'assistant', content: ESTIMATE_WAITING_REPLY }]);
     saveSession(chatId, LLM_STATE, data);

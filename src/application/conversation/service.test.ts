@@ -158,10 +158,44 @@ describe('conversation service templates', () => {
     });
     const { handleConversation } = await import('./service.js');
     const reply = await handleConversation('ch-est-wait', 'Ждем расчет');
-    expect(reply).toBe(
-      'Ожидайте, пожалуйста: как только расчет цены будет готов, мы сразу ответим вам в этом чате.',
-    );
+    expect(reply).toBe('Принято. Как только расчет будет готов, сразу напишем в этот чат.');
     expect(getSession('ch-est-wait')?.data.chatMode).toBe('estimate_wait');
+  });
+
+  it('estimate-wait thanks reply is friendly', async () => {
+    upsertChatEstimateRequest({
+      chatId: 'ch-est-wait-thanks',
+      itemId: 'it-2',
+      clientName: 'Клиент',
+      cargo: 'металл',
+      weight: '2 тонны',
+      volume: 'Не указан',
+      route: 'Ижевск — Воткинск',
+      paymentMethod: 'наличные',
+      details: null,
+    });
+    const { handleConversation } = await import('./service.js');
+    const reply = await handleConversation('ch-est-wait-thanks', 'хорошо спасибо');
+    expect(reply).toBe('Спасибо! Расчет в работе, как только будет готов — сразу напишем сюда.');
+  });
+
+  it('accepts phone in estimate_wait mode and thanks', async () => {
+    upsertChatEstimateRequest({
+      chatId: 'ch-est-wait-phone',
+      itemId: 'it-2',
+      clientName: 'Клиент',
+      cargo: 'металл',
+      weight: '2 тонны',
+      volume: 'Не указан',
+      route: 'Ижевск — Воткинск',
+      paymentMethod: 'наличные',
+      details: null,
+    });
+    const { handleConversation } = await import('./service.js');
+    const reply = await handleConversation('ch-est-wait-phone', 'давайте по номеру 89658824885');
+    expect(reply).toBe('Спасибо, мы перезвоним вам в ближайшее время.');
+    expect(getSession('ch-est-wait-phone')).toBeNull();
+    expect(getClientByChatId('ch-est-wait-phone')?.phone).toBe('+79658824885');
   });
 
   it('post-quote positive -> phone prompt -> thanks -> hours', async () => {
