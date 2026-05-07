@@ -333,6 +333,22 @@ describe('conversation service templates', () => {
     expect(runLlmTurn).not.toHaveBeenCalled();
   });
 
+  it('detects route and cargo from multi-load/multi-line noisy text', async () => {
+    const { handleConversation } = await import('./service.js');
+    await handleConversation(
+      'ch-multiload',
+      'загрузка\n1) аксайский проспект 19А даска 45*145*4м - 11шт\n2) ул. Днепропетровская 52а брус 45*45*3 - 27шт\nвыгрузка\nул. Изумрудная 9',
+    );
+    const reply = await handleConversation('ch-multiload', 'все детали выше');
+    expect(reply).toContain('вес');
+    expect(reply).toContain('объем');
+    expect(reply).toContain('форму оплаты');
+    expect(reply).toContain('сколько метров по длине пола займет груз в кузове');
+    expect(reply).not.toContain('маршрут');
+    expect(reply).not.toContain('характер груза');
+    expect(runLlmTurn).not.toHaveBeenCalled();
+  });
+
   it('switches to estimate-only on short "расчитайте" after phone prompt and uses prior data', async () => {
     const { handleConversation } = await import('./service.js');
     await handleConversation(

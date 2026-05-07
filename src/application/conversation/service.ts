@@ -189,14 +189,24 @@ function buildEstimateOnlyFollowupFromText(text: string): string | null {
   const lines = normalizeLines(text);
   const normalized = lines.map((l) => l.toLowerCase());
 
+  const hasLoadingUnloadingRoute =
+    normalized.some((l) => /загрузк/.test(l)) &&
+    normalized.some((l) => /выгруз|разгруз/.test(l));
+  const hasAddressLike =
+    normalized.filter((l) => /(\bул\.|\bулиц|просп|пер\.|шоссе|пос\.|город|г\.)/.test(l)).length >= 2;
   const hasRoute =
     normalized.some((l) => /\b(мск|москва|спб|санкт-?петербург)\b/.test(l)) ||
     normalized.some((l) => /(откуда|куда|маршрут)/.test(l)) ||
     normalized.some((l) => /\b.+\s*[-–—>]\s*.+\b/.test(l)) ||
     normalized.some((l) =>
       /(мск|москва|спб|санкт-?петербург).{0,20}(мск|москва|спб|санкт-?петербург)/.test(l),
-    );
-  const hasCargo = normalized.some((l) => /(груз|стекл|мебел|оборуд|короб|паллет|товар)/.test(l));
+    ) ||
+    hasLoadingUnloadingRoute ||
+    hasAddressLike;
+  const hasCargoListLike = normalized.some(
+    (l) => /(\d+\s*[xх*]\s*\d+(\s*[xх*]\s*\d+)?)|(\d+\s*шт)|(\bшт\b)/.test(l),
+  );
+  const hasCargo = normalized.some((l) => /(груз|стекл|мебел|оборуд|короб|паллет|товар|доск|даск|брус|лист)/.test(l)) || hasCargoListLike;
   const hasWeight = normalized.some((l) => /(вес|кг|тонн|тн|т\.)/.test(l));
   const hasPalletInfo = normalized.some((l) => PALLET_RE.test(l));
   const hasVolume = normalized.some((l) => VOLUME_RE.test(l)) || hasPalletInfo;
