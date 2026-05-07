@@ -15,7 +15,6 @@ import {
   ENGAGED_REOPEN_PROMPT,
   ESTIMATE_WAITING_REPLY,
   ESTIMATE_ONLY_START_PROMPT,
-  OUTSIDE_HOURS_REPLY,
   PHONE_INTENT_FOLLOWUP_REPLY,
   PHONE_INTENT_OPENING_REPLY,
   POST_QUOTE_NEGATIVE_REPLY,
@@ -24,7 +23,6 @@ import {
   isPriceQuery,
   isGratitudeLike,
   isWhenCallbackQuestion,
-  isWorkingHoursMoscow,
 } from './copy.js';
 import {
   getSession,
@@ -318,11 +316,6 @@ export async function handleConversation(
   text: string,
   chatContext?: AvitoChat,
 ): Promise<string> {
-  if (!isWorkingHoursMoscow() && isPriceQuery(text)) {
-    logger.info({ chatId }, 'Outside working hours — price query blocked');
-    return OUTSIDE_HOURS_REPLY;
-  }
-
   let session = getSession(chatId);
 
   if (session && LEGACY_STATES.has(session.state)) {
