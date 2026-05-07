@@ -150,6 +150,8 @@ export interface SessionData {
     | 'estimate_wait'
     | 'post_quote';
   postQuotePhase?: 'awaiting_sentiment' | 'awaiting_phone' | 'phone_captured';
+  /** Уже отправляли одноразовый closing-ack (👍) на завершающую реплику клиента. */
+  closingAckSent?: boolean;
   /** Последняя невалидная попытка телефона; при повторе принимаем как есть. */
   invalidPhoneAttempt?: string;
 }

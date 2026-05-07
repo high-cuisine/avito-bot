@@ -5,7 +5,7 @@ import {
   getChatById,
   type AvitoChat,
 } from '../../integrations/avito/client.js';
-import { classifyPriceReaction, runLlmTurn } from '../../integrations/openai/chat.js';
+import { classifyClosingMessage, classifyPriceReaction, runLlmTurn } from '../../integrations/openai/chat.js';
 import { postSubmitWebhook } from '../../integrations/webhook/submit-lead.js';
 import { executeSubmitPhoneBackfill } from './execute-submit.js';
 import {
@@ -163,6 +163,17 @@ function extractPhoneLikeDigits(text: string): string | null {
   return digits || null;
 }
 
+function normalizePhoneFromMessage(text: string): string | null {
+  const direct = normalizePhone(text);
+  if (direct) return direct;
+  const matches = text.match(/\+?\d[\d\s().-]{7,}\d/g) ?? [];
+  for (const m of matches) {
+    const normalized = normalizePhone(m);
+    if (normalized) return normalized;
+  }
+  return null;
+}
+
 function getInvalidPhoneAttemptKey(text: string): string | null {
   const digits = extractPhoneLikeDigits(text);
   if (!digits) return null;
@@ -225,6 +236,40 @@ function buildEstimateOnlyFollowupFromText(text: string): string | null {
 
   if (missing.length === 0) return null;
   return `Принято. Для расчета в чате без номера уточните, пожалуйста: ${missing.join(', ')}.`;
+}
+
+function hasConcreteEstimateData(text: string): boolean {
+  const lines = normalizeLines(text);
+  const normalized = lines.map((l) => l.toLowerCase());
+  if (!normalized.length) return false;
+
+  const hasLoadingUnloadingRoute =
+    normalized.some((l) => /загрузк/.test(l)) &&
+    normalized.some((l) => /выгруз|разгруз/.test(l));
+  const hasAddressLike =
+    normalized.filter((l) => /(\bул\.|\bулиц|просп|пер\.|шоссе|пос\.|город|г\.)/.test(l)).length >= 2;
+  const hasRoute =
+    normalized.some((l) => /\b(мск|москва|спб|санкт-?петербург)\b/.test(l)) ||
+    normalized.some((l) => /(откуда|куда|маршрут)/.test(l)) ||
+    normalized.some((l) => /\b.+\s*[-–—>]\s*.+\b/.test(l)) ||
+    normalized.some((l) =>
+      /(мск|москва|спб|санкт-?петербург).{0,20}(мск|москва|спб|санкт-?петербург)/.test(l),
+    ) ||
+    hasLoadingUnloadingRoute ||
+    hasAddressLike;
+  const hasCargoListLike = normalized.some(
+    (l) => /(\d+\s*[xх*]\s*\d+(\s*[xх*]\s*\d+)?)|(\d+\s*шт)|(\bшт\b)/.test(l),
+  );
+  const hasSpecificCargo = normalized.some((l) =>
+    /(стекл|мебел|оборуд|короб|паллет|товар|доск|даск|брус|лист)/.test(l),
+  );
+  const hasWeight = normalized.some((l) => /(вес|кг|тонн|тн|т\.)/.test(l));
+  const hasPalletInfo = normalized.some((l) => PALLET_RE.test(l));
+  const hasVolume = normalized.some((l) => VOLUME_RE.test(l)) || hasPalletInfo;
+  const hasPayment = normalized.some((l) => PAYMENT_RE.test(l));
+  const hasFloorMeters = normalized.some((l) => FLOOR_METERS_RE.test(l)) || hasPalletInfo;
+
+  return hasRoute || hasSpecificCargo || hasCargoListLike || hasWeight || hasVolume || hasPayment || hasFloorMeters;
 }
 
 function collectUserTextForEstimate(history: LlmChatMessage[], currentText: string): string {
@@ -304,6 +349,17 @@ function appendAssistantNote(data: SessionData, content: string): void {
   data.llmMessages = list;
 }
 
+async function classifyClosingAckAction(
+  data: SessionData,
+  text: string,
+): Promise<'first' | 'repeat' | 'none'> {
+  const isClosing = await classifyClosingMessage(text);
+  if (!isClosing) return 'none';
+  if (data.closingAckSent) return 'repeat';
+  data.closingAckSent = true;
+  return 'first';
+}
+
 async function completePhoneOnlyLead(
   chatId: string,
   data: SessionData,
@@ -334,7 +390,11 @@ async function completePhoneOnlyLead(
   if (!whOk) {
     logger.warn({ chatId }, 'Phone-only lead: local save OK but submit webhook failed');
   }
-  deleteSession(chatId);
+  data.phone = phone;
+  data.capturedPhone = phone;
+  data.chatMode = 'engaged';
+  data.postQuotePhase = undefined;
+  saveSession(chatId, LLM_STATE, data);
   logger.info({ chatId, phone, webhook_ok: whOk }, 'Phone-only lead completed');
   return THANKS_CALLBACK_SOON;
 }
@@ -412,9 +472,10 @@ export async function handleConversation(
   const history: LlmChatMessage[] = data.llmMessages ?? [];
 
   if (mode === 'phone_intent' && !history.some((m) => m.role === 'assistant')) {
-    const phoneFromFirstMessage = normalizePhone(text);
+    const phoneFromFirstMessage = normalizePhoneFromMessage(text);
     if (phoneFromFirstMessage) {
       data.invalidPhoneAttempt = undefined;
+      appendTurn(data, text, [{ role: 'assistant', content: THANKS_CALLBACK_SOON }]);
       return completePhoneOnlyLead(chatId, data, phoneFromFirstMessage);
     }
     appendTurn(data, text, [{ role: 'assistant', content: PHONE_INTENT_OPENING_REPLY }]);
@@ -423,15 +484,17 @@ export async function handleConversation(
   }
 
   if (mode === 'phone_intent' && history.some((m) => m.role === 'assistant')) {
-    const earlyPhone = normalizePhone(text);
+    const earlyPhone = normalizePhoneFromMessage(text);
     if (earlyPhone) {
       data.invalidPhoneAttempt = undefined;
+      appendTurn(data, text, [{ role: 'assistant', content: THANKS_CALLBACK_SOON }]);
       return completePhoneOnlyLead(chatId, data, earlyPhone);
     }
     const invalidPhoneKey = getInvalidPhoneAttemptKey(text);
     if (invalidPhoneKey) {
       if (data.invalidPhoneAttempt === invalidPhoneKey) {
         data.invalidPhoneAttempt = undefined;
+        appendTurn(data, text, [{ role: 'assistant', content: THANKS_CALLBACK_SOON }]);
         return completePhoneOnlyLead(chatId, data, text.trim());
       }
       data.invalidPhoneAttempt = invalidPhoneKey;
@@ -440,31 +503,78 @@ export async function handleConversation(
       return INVALID_PHONE_REPLY;
     }
 
-    if (isWithoutPhoneChoiceText(text)) {
-      data.chatMode = 'survey_estimate_only';
-      const collected = collectUserTextForEstimate(history, text);
-      const followup = buildEstimateOnlyFollowupFromText(collected);
-      const scriptReply = followup ?? ESTIMATE_ONLY_START_PROMPT;
-      logger.info({ chatId }, 'Client declined phone in phone_intent, switched to estimate-only mode');
-      appendTurn(data, text, [{ role: 'assistant', content: scriptReply }]);
+    const knownPhoneNorm =
+      data.capturedPhone?.trim() ||
+      (data.phone?.trim() ? normalizePhone(data.phone) : null) ||
+      undefined;
+    const result = await runLlmTurn(text, history, {
+      chatMode: 'phone_intent',
+      chatId,
+      clientName: data.clientName,
+      itemId: data.itemId,
+      knownCargo: data.cargo || undefined,
+      knownWeight: data.weight || undefined,
+      knownVolume: data.volume || undefined,
+      knownRoute: data.route || undefined,
+      knownPayment: data.paymentMethod || undefined,
+      knownPhone: knownPhoneNorm || undefined,
+    });
+    if (!result) {
+      if (isWithoutPhoneChoiceText(text)) {
+        data.chatMode = 'survey_estimate_only';
+        const collected = collectUserTextForEstimate(history, text);
+        const followup = hasConcreteEstimateData(collected)
+          ? buildEstimateOnlyFollowupFromText(collected)
+          : null;
+        const scriptReply = followup ?? ESTIMATE_ONLY_START_PROMPT;
+        appendTurn(data, text, [{ role: 'assistant', content: scriptReply }]);
+        saveSession(chatId, LLM_STATE, data);
+        return scriptReply;
+      }
+      appendTurn(data, text, [{ role: 'assistant', content: PHONE_INTENT_FOLLOWUP_REPLY }]);
       saveSession(chatId, LLM_STATE, data);
-      return scriptReply;
+      return PHONE_INTENT_FOLLOWUP_REPLY;
     }
-    appendTurn(data, text, [{ role: 'assistant', content: PHONE_INTENT_FOLLOWUP_REPLY }]);
-    saveSession(chatId, LLM_STATE, data);
-    return PHONE_INTENT_FOLLOWUP_REPLY;
+    const latestSession = getSession(chatId);
+    const targetData =
+      latestSession?.state === LLM_STATE
+        ? latestSession.data
+        : data;
+    if (isWithoutPhoneChoiceText(text)) {
+      targetData.chatMode = 'survey_estimate_only';
+    }
+    let decidedReply = result.reply || PHONE_INTENT_FOLLOWUP_REPLY;
+    if (targetData.chatMode === 'survey_estimate_only') {
+      const collected = collectUserTextForEstimate(history, text);
+      const followup = hasConcreteEstimateData(collected)
+        ? buildEstimateOnlyFollowupFromText(collected)
+        : null;
+      decidedReply = followup ?? ESTIMATE_ONLY_START_PROMPT;
+      for (let i = result.newHistoryEntries.length - 1; i >= 0; i -= 1) {
+        const entry = result.newHistoryEntries[i];
+        if (entry.role === 'assistant') {
+          entry.content = decidedReply;
+          break;
+        }
+      }
+    }
+    appendTurn(targetData, text, result.newHistoryEntries);
+    saveSession(chatId, LLM_STATE, targetData);
+    return decidedReply;
   }
 
   if (mode === 'survey') {
-    const phoneInSurvey = normalizePhone(text);
+    const phoneInSurvey = normalizePhoneFromMessage(text);
     if (phoneInSurvey) {
       data.invalidPhoneAttempt = undefined;
+      appendTurn(data, text, [{ role: 'assistant', content: THANKS_CALLBACK_SOON }]);
       return completePhoneOnlyLead(chatId, data, phoneInSurvey);
     }
     const invalidPhoneKey = getInvalidPhoneAttemptKey(text);
     if (invalidPhoneKey) {
       if (data.invalidPhoneAttempt === invalidPhoneKey) {
         data.invalidPhoneAttempt = undefined;
+        appendTurn(data, text, [{ role: 'assistant', content: THANKS_CALLBACK_SOON }]);
         return completePhoneOnlyLead(chatId, data, text.trim());
       }
       data.invalidPhoneAttempt = invalidPhoneKey;
@@ -534,6 +644,20 @@ export async function handleConversation(
     return CALLBACK_HOURS_DASH;
   }
 
+  if (mode === 'engaged') {
+    const closingAction = await classifyClosingAckAction(data, text);
+    if (closingAction === 'first') {
+      appendTurn(data, text, [{ role: 'assistant', content: '👍' }]);
+      saveSession(chatId, LLM_STATE, data);
+      return '👍';
+    }
+    if (closingAction === 'repeat') {
+      appendTurn(data, text, []);
+      saveSession(chatId, LLM_STATE, data);
+      return '';
+    }
+  }
+
   if (mode === 'engaged' && !history.some((m) => m.role === 'assistant')) {
     if (isGratitudeLike(text)) {
       appendTurn(data, text, [{ role: 'assistant', content: ENGAGED_THANKS_REPLY }]);
@@ -546,14 +670,28 @@ export async function handleConversation(
   }
 
   if (mode === 'estimate_wait') {
-    const phone = normalizePhone(text);
+    const closingAction = await classifyClosingAckAction(data, text);
+    if (closingAction === 'first') {
+      appendTurn(data, text, [{ role: 'assistant', content: '👍' }]);
+      saveSession(chatId, LLM_STATE, data);
+      return '👍';
+    }
+    if (closingAction === 'repeat') {
+      appendTurn(data, text, []);
+      saveSession(chatId, LLM_STATE, data);
+      return '';
+    }
+    const phone = normalizePhoneFromMessage(text);
     if (phone) {
       const exec = await executeSubmitPhoneBackfill(chatId, { phone });
       if (!exec.ok) {
         logger.warn({ chatId, toolContent: exec.toolContent }, 'Estimate-wait phone save failed');
         return 'Не удалось сохранить номер. Пришлите, пожалуйста, номер в формате +7XXXXXXXXXX.';
       }
-      deleteSession(chatId);
+      data.chatMode = 'engaged';
+      data.capturedPhone = phone;
+      data.phone = phone;
+      saveSession(chatId, LLM_STATE, data);
       return THANKS_CALLBACK_SOON;
     }
     if (isWhenCallbackQuestion(text)) {
@@ -578,15 +716,26 @@ export async function handleConversation(
   }
 
   if (mode === 'survey_estimate_only') {
-    const phone = normalizePhone(text);
+      const phone = normalizePhoneFromMessage(text);
     if (phone) {
       const exec = await executeSubmitPhoneBackfill(chatId, { phone });
       if (!exec.ok) {
         logger.warn({ chatId, toolContent: exec.toolContent }, 'Estimate-only phone save failed');
         return 'Не удалось сохранить номер. Пришлите, пожалуйста, номер в формате +7XXXXXXXXXX.';
       }
-      deleteSession(chatId);
+      appendTurn(data, text, [{ role: 'assistant', content: THANKS_CALLBACK_SOON }]);
+      data.chatMode = 'engaged';
+      data.capturedPhone = phone;
+      data.phone = phone;
+      saveSession(chatId, LLM_STATE, data);
       return THANKS_CALLBACK_SOON;
+    }
+
+    const collected = collectUserTextForEstimate(history, text);
+    if (!hasConcreteEstimateData(collected)) {
+      appendTurn(data, text, [{ role: 'assistant', content: ESTIMATE_ONLY_START_PROMPT }]);
+      saveSession(chatId, LLM_STATE, data);
+      return ESTIMATE_ONLY_START_PROMPT;
     }
   }
 
@@ -625,8 +774,10 @@ export async function handleConversation(
       saveSession(chatId, LLM_STATE, data);
       logger.info({ chatId, mode, nextMode: 'estimate_wait' }, 'Conversation completed (chat-estimate saved)');
     } else {
-      deleteSession(chatId);
-      logger.info({ chatId, mode }, 'Conversation completed (tool submit)');
+      data.chatMode = 'engaged';
+      data.postQuotePhase = undefined;
+      saveSession(chatId, LLM_STATE, data);
+      logger.info({ chatId, mode, nextMode: 'engaged' }, 'Conversation completed (tool submit)');
     }
   } else {
     saveSession(chatId, LLM_STATE, data);

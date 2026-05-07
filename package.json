@@ -6,6 +6,7 @@
     "start": "tsx src/index.ts",
     "dev": "tsx watch src/index.ts",
     "test": "vitest run",
+    "test:live": "LIVE_LLM=1 vitest run src/application/conversation/scenario.live.test.ts",
     "test:watch": "vitest",
     "test:chats": "tsx src/test-chats.ts",
     "backfill:phone": "tsx src/backfill-phone.ts",

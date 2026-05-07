@@ -11,6 +11,7 @@ import {
 
 const runLlmTurn = vi.hoisted(() => vi.fn());
 const classifyPriceReaction = vi.hoisted(() => vi.fn());
+const classifyClosingMessage = vi.hoisted(() => vi.fn());
 const postSubmitWebhook = vi.hoisted(() => vi.fn().mockResolvedValue(true));
 const resolveUserId = vi.hoisted(() => vi.fn().mockResolvedValue('bot'));
 const getChatById = vi.hoisted(() =>
@@ -26,6 +27,7 @@ const getChatById = vi.hoisted(() =>
 vi.mock('../../integrations/openai/chat.js', () => ({
   runLlmTurn,
   classifyPriceReaction,
+  classifyClosingMessage,
 }));
 vi.mock('../../integrations/webhook/submit-lead.js', () => ({
   postSubmitWebhook,
@@ -62,6 +64,10 @@ describe('conversation service templates', () => {
     clearDatabaseForTests();
     runLlmTurn.mockReset();
     classifyPriceReaction.mockReset();
+    classifyClosingMessage.mockReset();
+    classifyClosingMessage.mockImplementation(async (text: string) =>
+      /(спасибо|договорились|ждем|ждём|ок|окей|понял|понятно)/i.test(text),
+    );
     postSubmitWebhook.mockReset();
     postSubmitWebhook.mockResolvedValue(true);
   });
@@ -77,14 +83,14 @@ describe('conversation service templates', () => {
 
     const thanks = await handleConversation('ch-1', '+79000000000');
     expect(thanks).toBe('Спасибо, мы перезвоним вам в ближайшее время.');
-    expect(getSession('ch-1')).toBeNull();
+    expect(getSession('ch-1')?.data.chatMode).toBe('engaged');
   });
 
   it('accepts phone from the very first message', async () => {
     const { handleConversation } = await import('./service.js');
     const reply = await handleConversation('ch-first-phone', 'добрый день, мой номер 8 (900) 555-44-33');
     expect(reply).toBe('Спасибо, мы перезвоним вам в ближайшее время.');
-    expect(getSession('ch-first-phone')).toBeNull();
+    expect(getSession('ch-first-phone')?.data.chatMode).toBe('engaged');
     expect(getClientByChatId('ch-first-phone')?.phone).toBe('+79005554433');
   });
 
@@ -103,7 +109,7 @@ describe('conversation service templates', () => {
     await handleConversation('ch-wait', '+79000000000');
 
     const reply = await handleConversation('ch-wait', 'ждем');
-    expect(reply).toBe('Спасибо за сообщение. Уточните, пожалуйста, ваш вопрос.');
+    expect(reply).toBe('👍');
   });
 
   it('does not answer callback-hours on "спасибо" after phone-only completion', async () => {
@@ -112,7 +118,7 @@ describe('conversation service templates', () => {
     await handleConversation('ch-thanks-msg', '+79000000000');
 
     const reply = await handleConversation('ch-thanks-msg', 'спасибо');
-    expect(reply).toBe('Пожалуйста, пишите если появятся вопросы.');
+    expect(reply).toBe('👍');
   });
 
   it('asks clarifying question when client with saved phone writes again', async () => {
@@ -142,7 +148,7 @@ describe('conversation service templates', () => {
     });
     const { handleConversation } = await import('./service.js');
     const reply = await handleConversation('ch-engaged-thanks', 'спасибо');
-    expect(reply).toBe('Пожалуйста, пишите если появятся вопросы.');
+    expect(reply).toBe('👍');
   });
 
   it('starts with phone request even if chat-estimate exists', async () => {
@@ -171,7 +177,7 @@ describe('conversation service templates', () => {
     });
     const { handleConversation } = await import('./service.js');
     const reply = await handleConversation('ch-est-wait-thanks', 'хорошо спасибо');
-    expect(reply).toBe('Пожалуйста, пишите если появятся вопросы.');
+    expect(reply).toBe('👍');
   });
 
   it('accepts phone in estimate_wait mode and thanks', async () => {
@@ -183,7 +189,7 @@ describe('conversation service templates', () => {
     const { handleConversation } = await import('./service.js');
     const reply = await handleConversation('ch-est-wait-phone', 'давайте по номеру 89658824885');
     expect(reply).toBe('Спасибо, мы перезвоним вам в ближайшее время.');
-    expect(getSession('ch-est-wait-phone')).toBeNull();
+    expect(getSession('ch-est-wait-phone')?.data.chatMode).toBe('engaged');
     expect(getClientByChatId('ch-est-wait-phone')?.phone).toBe('+79658824885');
   });
 
@@ -249,7 +255,6 @@ describe('conversation service templates', () => {
     const reply = await handleConversation('ch-refuse', 'не хочу оставлять номер телефона');
 
     expect(reply).toBe(ESTIMATE_ONLY_PROMPT);
-    expect(runLlmTurn).not.toHaveBeenCalled();
     expect(getSession('ch-refuse')?.data.chatMode).toBe('survey_estimate_only');
   });
 
@@ -258,7 +263,6 @@ describe('conversation service templates', () => {
     await handleConversation('ch-any-non-phone', 'привет');
     const reply = await handleConversation('ch-any-non-phone', 'давайте обсудим тут');
     expect(reply).toBe('Напишите свой номер телефона, свяжемся с Вами и обсудим детали грузоперевозки.');
-    expect(runLlmTurn).not.toHaveBeenCalled();
     expect(getSession('ch-any-non-phone')?.data.chatMode).toBe('phone_intent');
   });
 
@@ -268,7 +272,6 @@ describe('conversation service templates', () => {
     const reply = await handleConversation('ch-short-no', 'нет');
     expect(reply).toBe(ESTIMATE_ONLY_PROMPT);
     expect(getSession('ch-short-no')?.data.chatMode).toBe('survey_estimate_only');
-    expect(runLlmTurn).not.toHaveBeenCalled();
   });
 
   it('switches to estimate-only mode on short refusal "не хочу"', async () => {
@@ -277,7 +280,13 @@ describe('conversation service templates', () => {
     const reply = await handleConversation('ch-short-no-want', 'не хочу');
     expect(reply).toBe(ESTIMATE_ONLY_PROMPT);
     expect(getSession('ch-short-no-want')?.data.chatMode).toBe('survey_estimate_only');
-    expect(runLlmTurn).not.toHaveBeenCalled();
+  });
+
+  it('uses fixed estimate-only template when refusal has no transport data', async () => {
+    const { handleConversation } = await import('./service.js');
+    await handleConversation('ch-refuse-no-data', 'привет');
+    const reply = await handleConversation('ch-refuse-no-data', 'номер не дам, давайте считать тут');
+    expect(reply).toBe(ESTIMATE_ONLY_PROMPT);
   });
 
   it('returns invalid phone message and waits for retry', async () => {
@@ -294,7 +303,7 @@ describe('conversation service templates', () => {
     await handleConversation('ch-repeat-invalid-phone', 'мой номер 8 999 111 22 33 44');
     const thanks = await handleConversation('ch-repeat-invalid-phone', 'мой номер 8 999 111 22 33 44');
     expect(thanks).toBe('Спасибо, мы перезвоним вам в ближайшее время.');
-    expect(getSession('ch-repeat-invalid-phone')).toBeNull();
+    expect(getSession('ch-repeat-invalid-phone')?.data.chatMode).toBe('engaged');
     expect(getClientByChatId('ch-repeat-invalid-phone')?.phone).toBe('мой номер 8 999 111 22 33 44');
   });
 
@@ -303,7 +312,6 @@ describe('conversation service templates', () => {
     await handleConversation('ch-price-first', 'привет');
     const reply = await handleConversation('ch-price-first', 'посчитайте цену сначала мне');
     expect(reply).toBe(ESTIMATE_ONLY_PROMPT);
-    expect(runLlmTurn).not.toHaveBeenCalled();
   });
 
   it('switches to estimate-only mode on "посчитайте стоимость" in first message', async () => {
@@ -313,7 +321,6 @@ describe('conversation service templates', () => {
       'добрый день\nпосчитайте стоимость\nмск спб\nстекло\n2 тонны',
     );
     expect(reply).toBe('Здравствуйте. Напишите свой номер телефона, свяжемся с Вами и обсудим детали грузоперевозки.');
-    expect(runLlmTurn).not.toHaveBeenCalled();
   });
 
   it('asks only missing estimate fields from previously sent data after phone refusal', async () => {
@@ -330,7 +337,6 @@ describe('conversation service templates', () => {
     expect(reply).not.toContain('маршрут');
     expect(reply).not.toContain('характер груза');
     expect(reply).not.toContain('вес');
-    expect(runLlmTurn).not.toHaveBeenCalled();
   });
 
   it('detects route and cargo from multi-load/multi-line noisy text', async () => {
@@ -346,7 +352,6 @@ describe('conversation service templates', () => {
     expect(reply).toContain('сколько метров по длине пола займет груз в кузове');
     expect(reply).not.toContain('маршрут');
     expect(reply).not.toContain('характер груза');
-    expect(runLlmTurn).not.toHaveBeenCalled();
   });
 
   it('switches to estimate-only on short "расчитайте" after phone prompt and uses prior data', async () => {
@@ -363,7 +368,6 @@ describe('conversation service templates', () => {
     expect(reply).not.toContain('вес');
     expect(reply).not.toContain('объем');
     expect(reply).not.toContain('форму оплаты');
-    expect(runLlmTurn).not.toHaveBeenCalled();
   });
 
   it('treats pallet count as volume and floor-length data', async () => {
@@ -419,7 +423,6 @@ describe('conversation service templates', () => {
     await handleConversation('ch-second-option', 'привет');
     const reply = await handleConversation('ch-second-option', 'второй вариант');
     expect(reply).toBe(ESTIMATE_ONLY_PROMPT);
-    expect(runLlmTurn).not.toHaveBeenCalled();
   });
 
   it('switches to estimate-only mode on broad refusal phrasing', async () => {
@@ -427,7 +430,6 @@ describe('conversation service templates', () => {
     await handleConversation('ch-broad-refuse', 'привет');
     const reply = await handleConversation('ch-broad-refuse', 'я не готов оставлять телефон, считаем в чате');
     expect(reply).toBe(ESTIMATE_ONLY_PROMPT);
-    expect(runLlmTurn).not.toHaveBeenCalled();
   });
 
   it('switches to estimate-only mode on indirect refusal "детали все указаны"', async () => {
@@ -435,7 +437,6 @@ describe('conversation service templates', () => {
     await handleConversation('ch-indirect-refuse', 'привет');
     const reply = await handleConversation('ch-indirect-refuse', 'детали все указаны');
     expect(reply).toBe(ESTIMATE_ONLY_PROMPT);
-    expect(runLlmTurn).not.toHaveBeenCalled();
   });
 
   it('switches to estimate-only mode on indirect refusal "детали все есть"', async () => {
@@ -443,7 +444,6 @@ describe('conversation service templates', () => {
     await handleConversation('ch-indirect-refuse-has', 'привет');
     const reply = await handleConversation('ch-indirect-refuse-has', 'детали все есть');
     expect(reply).toBe(ESTIMATE_ONLY_PROMPT);
-    expect(runLlmTurn).not.toHaveBeenCalled();
   });
 
   it('switches to estimate-only mode on indirect refusal "все детали выше"', async () => {
@@ -451,7 +451,6 @@ describe('conversation service templates', () => {
     await handleConversation('ch-indirect-refuse-above', 'привет');
     const reply = await handleConversation('ch-indirect-refuse-above', 'все детали выше');
     expect(reply).toBe(ESTIMATE_ONLY_PROMPT);
-    expect(runLlmTurn).not.toHaveBeenCalled();
   });
 
   it('does not spam estimate-only prompt after it was already sent', async () => {
@@ -526,7 +525,6 @@ describe('conversation service templates', () => {
     const reply = await handleConversation('ch-survey-refuse', 'не дам');
 
     expect(reply).toBe(ESTIMATE_ONLY_PROMPT);
-    expect(runLlmTurn).not.toHaveBeenCalled();
     expect(getSession('ch-survey-refuse')?.data.chatMode).toBe('survey_estimate_only');
   });
 
@@ -541,7 +539,6 @@ describe('conversation service templates', () => {
     const reply = await handleConversation('ch-survey-any', 'маршрут москва казань');
 
     expect(reply).toBe(ESTIMATE_ONLY_PROMPT);
-    expect(runLlmTurn).not.toHaveBeenCalled();
     expect(getSession('ch-survey-any')?.data.chatMode).toBe('survey_estimate_only');
   });
 
@@ -554,7 +551,7 @@ describe('conversation service templates', () => {
     const { handleConversation } = await import('./service.js');
     const reply = await handleConversation('ch-est-phone-late', 'давайте по телефону 89658824885');
     expect(reply).toBe('Спасибо, мы перезвоним вам в ближайшее время.');
-    expect(getSession('ch-est-phone-late')).toBeNull();
+    expect(getSession('ch-est-phone-late')?.data.chatMode).toBe('engaged');
     expect(getClientByChatId('ch-est-phone-late')?.phone).toBe('+79658824885');
   });
 
@@ -583,7 +580,7 @@ describe('conversation service templates', () => {
     expect(getSession('ch-est-done-thanks')?.data.chatMode).toBe('estimate_wait');
 
     const thanks = await handleConversation('ch-est-done-thanks', 'хорошо спасибо');
-    expect(thanks).toBe('Пожалуйста, пишите если появятся вопросы.');
+    expect(thanks).toBe('👍');
   });
 
   it('returns fixed estimate-only questionnaire when mode starts without assistant history', async () => {
@@ -597,7 +594,6 @@ describe('conversation service templates', () => {
     const reply = await handleConversation('ch-est-empty-history', 'нужен расчет');
 
     expect(reply).toBe(ESTIMATE_ONLY_PROMPT);
-    expect(runLlmTurn).not.toHaveBeenCalled();
   });
 
   it('completes with thanks when phone arrives in survey mode', async () => {
@@ -611,8 +607,53 @@ describe('conversation service templates', () => {
     const reply = await handleConversation('ch-survey-phone', 'мой телефон 8 (900) 000-00-02');
 
     expect(reply).toBe('Спасибо, мы перезвоним вам в ближайшее время.');
-    expect(runLlmTurn).not.toHaveBeenCalled();
-    expect(getSession('ch-survey-phone')).toBeNull();
+    expect(getSession('ch-survey-phone')?.data.chatMode).toBe('engaged');
     expect(getClientByChatId('ch-survey-phone')?.phone).toBe('+79000000002');
+  });
+
+  it('scenario: phone-first -> refusal without data -> always fixed template', async () => {
+    const { handleConversation } = await import('./service.js');
+
+    const step1 = await handleConversation('ch-scn-fixed-template', 'добрый день');
+    expect(step1).toBe('Здравствуйте. Напишите свой номер телефона, свяжемся с Вами и обсудим детали грузоперевозки.');
+
+    const step2 = await handleConversation('ch-scn-fixed-template', 'номер не дам, считаем здесь');
+    expect(step2).toBe(ESTIMATE_ONLY_PROMPT);
+
+    // no transport data yet -> still fixed template
+    const step3 = await handleConversation('ch-scn-fixed-template', 'все детали выше');
+    expect(step3).toBe(ESTIMATE_ONLY_PROMPT);
+  });
+
+  it('scenario: phone-first -> refusal with data -> asks only missing fields', async () => {
+    const { handleConversation } = await import('./service.js');
+
+    await handleConversation('ch-scn-missing-only', 'добрый день');
+    const reply = await handleConversation(
+      'ch-scn-missing-only',
+      'номер не дам, считаем тут: мск спб, стекло, 2 тонны',
+    );
+
+    expect(reply).toContain('Для расчета в чате без номера уточните, пожалуйста:');
+    expect(reply).toContain('объем');
+    expect(reply).toContain('форму оплаты');
+    expect(reply).toContain('сколько метров по длине пола займет груз в кузове');
+    expect(reply).not.toContain('маршрут');
+    expect(reply).not.toContain('характер груза');
+    expect(reply).not.toContain('вес');
+  });
+
+  it('scenario: estimate-only -> late phone -> engaged -> closing message gets empty reply', async () => {
+    const { handleConversation } = await import('./service.js');
+
+    await handleConversation('ch-scn-late-phone', 'привет');
+    await handleConversation('ch-scn-late-phone', 'номер не дам');
+    const thanks = await handleConversation('ch-scn-late-phone', 'тогда давайте по номеру 8 (965) 882-48-85');
+
+    expect(thanks).toBe('Спасибо, мы перезвоним вам в ближайшее время.');
+    expect(getSession('ch-scn-late-phone')?.data.chatMode).toBe('engaged');
+
+    const closing = await handleConversation('ch-scn-late-phone', 'спасибо');
+    expect(closing).toBe('👍');
   });
 });

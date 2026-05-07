@@ -57,6 +57,15 @@ export function isGratitudeLike(text: string): boolean {
   return GRATITUDE_RE.test(clean);
 }
 
+const CLOSING_RE =
+  /^(спасибо|благодарю|понял|понятно|ок|окей|хорошо|договорились|принято|до связи|ожидаю|жду|ждем|все|всё)(\s+(спасибо|благодарю))?[!.\s]*$/i;
+
+export function isClosingMessage(text: string): boolean {
+  const clean = text.trim();
+  if (!clean) return false;
+  return CLOSING_RE.test(clean);
+}
+
 const PRICE_QUERY_WORDS =
   /(цен[уаы]|стоимост[ьи]|расчёт|расчет|рассчита|посчита|сколько\s*стоит|прайс|тариф|калькул|смет[ауе]|почём|почем)/i;
 

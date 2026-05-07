@@ -47,6 +47,8 @@ const TOOL_TRANSPORT = 'submit_transport_lead';
 const TOOL_PHONE = 'submit_phone_backfill';
 const TOOL_CHAT_ESTIMATE = 'submit_chat_estimate_request';
 const TOOL_DECLARE_PHONE_PATH = 'declare_phone_contact_path';
+const TOOL_SCRIPTED_REPLY = 'send_scripted_reply';
+const PHONE_INTENT_TEMPLATE = 'Напишите свой номер телефона, свяжемся с Вами и обсудим детали грузоперевозки.';
 const ESTIMATE_ONLY_START_PROMPT =
   'Хорошо, считаем в чате без номера. Напишите, пожалуйста: \n' +
   '1.Маршрут (откуда куда везем)\n' +
@@ -158,6 +160,33 @@ function phoneIntentTool() {
   };
 }
 
+function scriptedReplyTool() {
+  return {
+    type: 'function' as const,
+    function: {
+      name: TOOL_SCRIPTED_REPLY,
+      description:
+        'Выбери и верни заранее подготовленный тип ответа в phone_intent: повторно запросить телефон, перейти в расчет без телефона (шаблон), или уточняющий дозапрос по недостающим данным.',
+      parameters: {
+        type: 'object',
+        properties: {
+          reply_key: {
+            type: 'string',
+            enum: ['ask_phone', 'estimate_template', 'estimate_followup'],
+            description: 'ask_phone|estimate_template|estimate_followup',
+          },
+          text: {
+            type: 'string',
+            description:
+              'Текст ответа пользователю. Для estimate_template используй точный шаблон. Для estimate_followup — только недостающие пункты.',
+          },
+        },
+        required: ['reply_key', 'text'],
+      },
+    },
+  };
+}
+
 function phoneTool() {
   return {
     type: 'function' as const,
@@ -234,6 +263,19 @@ function buildWithPhoneContextNote(ctx: LlmContext): string {
   return [item, `Клиент: «${name}».`].filter((x) => x).join('\n');
 }
 
+function buildPhoneIntentDecisionNote(): string {
+  return [
+    '# Контекст (режим: phone_intent — решение принимает модель)',
+    `Обязательно вызови ${TOOL_DECLARE_PHONE_PATH}, чтобы зафиксировать выбор клиента:`,
+    '- willing_to_share_phone=true: клиент готов на сценарий с телефоном.',
+    '- willing_to_share_phone=false: клиент отказывается от телефона и уходит в расчет в чате.',
+    `После этого вызови ${TOOL_SCRIPTED_REPLY} и выбери reply_key:`,
+    '- ask_phone: если нужно повторно попросить номер телефона.',
+    '- estimate_template: если данных нет, отправь полный шаблон расчета без телефона.',
+    '- estimate_followup: если данные частично есть, дозапроси только недостающее.',
+  ].join('\n');
+}
+
 function buildWithoutPhoneContextNote(ctx: LlmContext): string {
   const name = ctx.clientName || 'клиент';
   const item = ctx.itemId ? `Объявление (item_id): ${ctx.itemId}.` : '';
@@ -263,7 +305,7 @@ function buildWithoutPhoneContextNote(ctx: LlmContext): string {
 export function buildSystemPrompt(ctx: LlmContext): string {
   const base = getBasePrompt().trim();
   if (ctx.chatMode === 'phone_intent') {
-    return joinPromptBlocks([base, getFirstMessagePrompt().trim()]);
+    return joinPromptBlocks([base, getFirstMessagePrompt().trim(), buildPhoneIntentDecisionNote()]);
   }
   if (ctx.chatMode === 'survey_estimate_only' || ctx.chatMode === 'estimate_wait') {
     return joinPromptBlocks([base, getWithoutPhoneScenarioBlock(ctx.chatMode), buildWithoutPhoneContextNote(ctx)]);
@@ -287,7 +329,7 @@ function toolsForMode(chatMode: LlmContext['chatMode']) {
     case 'post_quote':
       return [phoneTool()];
     case 'phone_intent':
-      return [phoneIntentTool()];
+      return [phoneIntentTool(), scriptedReplyTool()];
     case 'survey':
       return [transportTool()];
     case 'survey_estimate_only':
@@ -424,6 +466,19 @@ function parseDeclarePhonePathMode(toolContent: string): 'survey' | 'survey_esti
   }
 }
 
+function parseScriptedReplyTool(toolContent: string): { key: string; text: string } | null {
+  try {
+    const parsed = JSON.parse(toolContent) as { reply_key?: unknown; text?: unknown };
+    if (typeof parsed.reply_key !== 'string' || typeof parsed.text !== 'string') return null;
+    const key = parsed.reply_key.trim();
+    const text = parsed.text.trim();
+    if (!key || !text) return null;
+    return { key, text };
+  } catch {
+    return null;
+  }
+}
+
 async function callChatCompletions(body: Record<string, unknown>): Promise<{
   message: ChoiceMessage | null;
   finishReason: string | null;
@@ -531,6 +586,7 @@ export async function runLlmTurn(
   let sessionEnded = false;
   let writeToolAttempted = false;
   let firstWriteToolError: string | null = null;
+  let scriptedReply: { key: string; text: string } | null = null;
 
   for (const tc of toolCalls) {
     if (tc.type !== 'function') continue;
@@ -557,6 +613,22 @@ export async function runLlmTurn(
         },
         'Tool execution result',
       );
+    } else if (name === TOOL_SCRIPTED_REPLY && ctx.chatMode === 'phone_intent') {
+      const key =
+        typeof (args as { reply_key?: unknown }).reply_key === 'string'
+          ? String((args as { reply_key?: unknown }).reply_key).trim()
+          : '';
+      const text =
+        typeof (args as { text?: unknown }).text === 'string'
+          ? String((args as { text?: unknown }).text).trim()
+          : '';
+      const payload = {
+        ok: Boolean(key && text),
+        reply_key: key || 'ask_phone',
+        text: text || PHONE_INTENT_TEMPLATE,
+      };
+      toolContent = JSON.stringify(payload);
+      scriptedReply = parseScriptedReplyTool(toolContent);
     } else if (name === TOOL_TRANSPORT && ctx.chatMode === 'survey') {
       writeToolAttempted = true;
       const exec = await executeSubmitTransportLead(
@@ -645,13 +717,28 @@ export async function runLlmTurn(
   }
 
   if (ctx.chatMode === 'phone_intent') {
-    const declaredEstimateOnly = newHistoryEntries.some((entry) => {
-      if (entry.role !== 'tool') return false;
-      return parseDeclarePhonePathMode(entry.content) === 'survey_estimate_only';
-    });
-    if (declaredEstimateOnly) {
-      newHistoryEntries.push({ role: 'assistant', content: ESTIMATE_ONLY_START_PROMPT });
-      return { reply: ESTIMATE_ONLY_START_PROMPT, newHistoryEntries, sessionEnded: false };
+    const declaredMode = newHistoryEntries.reduce<'survey' | 'survey_estimate_only' | null>((acc, entry) => {
+      if (entry.role !== 'tool') return acc;
+      const mode = parseDeclarePhonePathMode(entry.content);
+      return mode ?? acc;
+    }, null);
+    if (declaredMode === 'survey_estimate_only') {
+      const text =
+        scriptedReply?.key === 'estimate_followup' || scriptedReply?.key === 'estimate_template'
+          ? scriptedReply.text
+          : ESTIMATE_ONLY_START_PROMPT;
+      newHistoryEntries.push({ role: 'assistant', content: text });
+      return { reply: text, newHistoryEntries, sessionEnded: false };
+    }
+    if (declaredMode === 'survey') {
+      const text = scriptedReply?.key === 'ask_phone' ? scriptedReply.text : PHONE_INTENT_TEMPLATE;
+      newHistoryEntries.push({ role: 'assistant', content: text });
+      return { reply: text, newHistoryEntries, sessionEnded: false };
+    }
+    if (scriptedReply) {
+      const text = scriptedReply.text;
+      newHistoryEntries.push({ role: 'assistant', content: text });
+      return { reply: text, newHistoryEntries, sessionEnded: false };
     }
   }
 
@@ -772,5 +859,29 @@ export async function classifyPriceReaction(userMessage: string): Promise<PriceR
     if (lowered.includes('positive')) return 'positive';
     if (lowered.includes('negative')) return 'negative';
     return 'neutral';
+  }
+}
+
+export async function classifyClosingMessage(userMessage: string): Promise<boolean> {
+  const first = await callChatCompletions({
+    model: config.openai.model,
+    messages: [
+      {
+        role: 'system',
+        content:
+          'Определи, пытается ли клиент завершить диалог (например: благодарит, прощается, пишет "договорились", "ок", "спасибо"). Верни строго JSON вида {"closing":true|false} без пояснений.',
+      },
+      { role: 'user', content: userMessage },
+    ],
+    temperature: 0,
+    max_tokens: 80,
+  });
+
+  const text = first?.message?.content ?? '';
+  try {
+    const parsed = JSON.parse(text) as { closing?: unknown };
+    return parsed.closing === true;
+  } catch {
+    return false;
   }
 }
