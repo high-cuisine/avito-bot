@@ -333,5 +333,33 @@ maybeDescribe('live llm conversation scenarios', () => {
     },
     300_000 * repeatRuns,
   );
+
+  it(
+    'full flow: does not forget cargo context (glass) inside estimate chat',
+    async () => {
+      await runRepeated('live-flow-keep-cargo-context', async (attempt) => {
+        const { handleConversation } = await import('./service.js');
+        const chatId = `live-flow-keep-cargo-context-${attempt}`;
+
+        const s1 = await sendAndLog(handleConversation, chatId, 'давайте в чате');
+        expect(s1).toBe('Здравствуйте. Напишите свой номер телефона, свяжемся с Вами и обсудим детали грузоперевозки.');
+
+        const s2 = await sendAndLog(handleConversation, chatId, 'не хочу');
+        expect(s2).toBe(ESTIMATE_ONLY_PROMPT);
+
+        await sendAndLog(handleConversation, chatId, 'мск спб');
+        await sendAndLog(handleConversation, chatId, 'стекло');
+        await sendAndLog(handleConversation, chatId, '5 палетов');
+        await sendAndLog(handleConversation, chatId, '2 куба 2 тонны');
+        const s7 = await sendAndLog(handleConversation, chatId, 'и наличка');
+
+        expectNoGenericFailure(s7);
+        expect(s7.toLowerCase()).not.toContain('какой характер груза');
+        expect(s7.toLowerCase()).not.toContain('уточните характер груза');
+        expect(s7.toLowerCase()).not.toContain('подскажите характер груза');
+      });
+    },
+    300_000 * repeatRuns,
+  );
 });
 
