@@ -37,5 +37,7 @@ export function shouldProcessSender(
   authorId: string | number,
 ): boolean {
   if (runtimeMode === 'prod') return true;
+  // test-mode is strict: empty allowlist means nobody is allowed.
+  if (!allowlistActive()) return false;
   return isSenderAllowlisted(chatId, authorId);
 }

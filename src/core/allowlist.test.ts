@@ -63,4 +63,10 @@ describe('allowlist', () => {
     expect(shouldProcessSender('test', 'c1', 'u1')).toBe(true);
     expect(shouldProcessSender('test', 'c2', 'u2')).toBe(false);
   });
+
+  it('test mode denies all when allowlist is empty', async () => {
+    vi.resetModules();
+    const { shouldProcessSender } = await import('./allowlist.js');
+    expect(shouldProcessSender('test', 'any-chat', 'any-user')).toBe(false);
+  });
 });
