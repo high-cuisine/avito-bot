@@ -285,6 +285,15 @@ function appendTurn(data: SessionData, userText: string, entries: LlmChatMessage
   data.llmMessages = list;
 }
 
+function appendAssistantNote(data: SessionData, content: string): void {
+  const list = data.llmMessages ?? [];
+  list.push({ role: 'assistant', content });
+  while (list.length > MAX_LLM_HISTORY) {
+    list.splice(0, list.length - MAX_LLM_HISTORY);
+  }
+  data.llmMessages = list;
+}
+
 async function completePhoneOnlyLead(
   chatId: string,
   data: SessionData,
@@ -606,10 +615,16 @@ export async function handleConversation(
     const collected = collectUserTextForEstimate(history, text);
     const scripted = buildEstimateOnlyFollowupFromText(collected);
     if (scripted && !asksVolumeOrFloor(scripted) && !asksCoreEstimateFields(scripted)) {
+      appendAssistantNote(data, scripted);
+      saveSession(chatId, LLM_STATE, data);
       return scripted;
     }
     if (!scripted) {
-      return 'Принято, палеты учтены как длина по полу. Если всё верно, подтверждайте, и я передам заявку на расчет.';
+      const note =
+        'Принято, палеты учтены как длина по полу. Если всё верно, подтверждайте, и я передам заявку на расчет.';
+      appendAssistantNote(data, note);
+      saveSession(chatId, LLM_STATE, data);
+      return note;
     }
   }
   return finalReply;
