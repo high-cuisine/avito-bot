@@ -1,5 +1,5 @@
 import express, { Request, Response } from 'express';
-import { allowlistActive, shouldProcessSender } from '../../core/allowlist.js';
+import { shouldProcessSender } from '../../core/allowlist.js';
 import { config } from '../../core/config.js';
 import { logger } from '../../core/logger.js';
 import {
@@ -8,7 +8,7 @@ import {
   getChatById,
   type AvitoMessage,
 } from '../../integrations/avito/client.js';
-import { formatAllowlistRejectLog } from '../../integrations/avito/peer-label.js';
+import { formatAllowlistRejectLog, resolveMessengerPeerName } from '../../integrations/avito/peer-label.js';
 import { enqueueIncomingMessage } from '../../application/messaging/batched-dispatcher.js';
 import { getRuntimeMode } from '../../infrastructure/storage/repository.js';
 
@@ -41,15 +41,17 @@ export async function startWebhookServer(): Promise<void> {
 
     const runtimeMode = getRuntimeMode();
     if (!shouldProcessSender(runtimeMode, chatId, authorId)) {
-      if (runtimeMode === 'test' && allowlistActive()) {
+      if (runtimeMode === 'test') {
+        let peerName = '—';
         let line = formatAllowlistRejectLog(undefined, authorId, chatId);
         try {
           const ch = await getChatById(chatId);
+          peerName = resolveMessengerPeerName(ch, authorId);
           line = formatAllowlistRejectLog(ch, authorId, chatId);
         } catch {
           // оставляем строку без имени
         }
-        logger.warn(line);
+        logger.warn({ peerName, userId: authorId, chatId }, line);
       }
       return;
     }

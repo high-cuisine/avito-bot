@@ -1,4 +1,4 @@
-import { allowlistActive, shouldProcessSender } from '../../core/allowlist.js';
+import { shouldProcessSender } from '../../core/allowlist.js';
 import { config } from '../../core/config.js';
 import { logger } from '../../core/logger.js';
 import {
@@ -7,7 +7,7 @@ import {
   markChatRead,
   resolveUserId,
 } from '../../integrations/avito/client.js';
-import { formatAllowlistRejectLog } from '../../integrations/avito/peer-label.js';
+import { formatAllowlistRejectLog, resolveMessengerPeerName } from '../../integrations/avito/peer-label.js';
 import { getRuntimeMode } from '../../infrastructure/storage/repository.js';
 import { enqueueIncomingMessage } from './batched-dispatcher.js';
 
@@ -65,8 +65,14 @@ async function pollOnce(): Promise<void> {
 
       const runtimeMode = getRuntimeMode();
       if (!shouldProcessSender(runtimeMode, msg.chat_id, msg.author_id)) {
-        if (runtimeMode === 'test' && allowlistActive()) {
+        if (runtimeMode === 'test') {
+          const peerName = resolveMessengerPeerName(chat, msg.author_id);
           logger.warn(
+            {
+              peerName,
+              userId: String(msg.author_id),
+              chatId: msg.chat_id,
+            },
             formatAllowlistRejectLog(chat, msg.author_id, msg.chat_id),
           );
         }
