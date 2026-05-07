@@ -31,7 +31,6 @@ import {
   saveClient,
   deleteSession,
   getClientByChatId,
-  getChatEstimateByChatId,
   type SessionData,
   type LlmChatMessage,
 } from '../../infrastructure/storage/repository.js';
@@ -96,13 +95,15 @@ const ESTIMATE_ONLY_HINTS = [
   'детали указаны',
   'детали все есть',
   'детали есть',
+  'все детали выше',
+  'детали выше',
   'все данные указаны',
   'все данные есть',
   'все данные выше',
   'данные все указаны',
 ];
 const ESTIMATE_ONLY_INDIRECT_RE =
-  /((детал[ьи]).{0,20}(все\s*)?(есть|указан))|((все\s+данн(ые|ая)).{0,20}(есть|указан))/i;
+  /((детал[ьи]).{0,20}(все\s*)?(есть|указан|выше))|((все\s+(данн(ые|ая)|детал[ьи])).{0,20}(есть|указан|выше))/i;
 
 const PHONE_REQUEST_PATTERN =
   /(напиш|укаж|пришл|остав(ь|ьте)).{0,40}(номер|телефон)|(номер|телефон).{0,40}(\+7|8\d{10})/i;
@@ -366,24 +367,6 @@ export async function handleConversation(
       };
       saveSession(chatId, LLM_STATE, data);
       session = getSession(chatId);
-    } else {
-      const existingEstimate = getChatEstimateByChatId(chatId);
-      if (existingEstimate) {
-        const data: SessionData = {
-          ...emptyData(),
-          itemId: existingEstimate.itemId ?? '',
-          clientName: existingEstimate.clientName ?? '',
-          cargo: existingEstimate.cargo ?? '',
-          weight: existingEstimate.weight ?? '',
-          volume: existingEstimate.volume ?? '',
-          route: existingEstimate.route ?? '',
-          paymentMethod: existingEstimate.paymentMethod ?? '',
-          chatMode: 'estimate_wait',
-          llmMessages: [],
-        };
-        saveSession(chatId, LLM_STATE, data);
-        session = getSession(chatId);
-      }
     }
 
     if (!session) {

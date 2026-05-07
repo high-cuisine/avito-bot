@@ -144,7 +144,7 @@ describe('conversation service templates', () => {
     expect(reply).toBe('Пожалуйста, пишите если появятся вопросы.');
   });
 
-  it('keeps estimate-wait context after restart and replies with waiting message', async () => {
+  it('starts with phone request even if chat-estimate exists', async () => {
     upsertChatEstimateRequest({
       chatId: 'ch-est-wait',
       itemId: 'it-2',
@@ -158,21 +158,15 @@ describe('conversation service templates', () => {
     });
     const { handleConversation } = await import('./service.js');
     const reply = await handleConversation('ch-est-wait', 'Ждем расчет');
-    expect(reply).toBe('Принято. Как только расчет будет готов, сразу напишем в этот чат.');
-    expect(getSession('ch-est-wait')?.data.chatMode).toBe('estimate_wait');
+    expect(reply).toBe('Здравствуйте. Напишите свой номер телефона, свяжемся с Вами и обсудим детали грузоперевозки.');
+    expect(getSession('ch-est-wait')?.data.chatMode).toBe('phone_intent');
   });
 
   it('estimate-wait thanks reply is friendly', async () => {
-    upsertChatEstimateRequest({
-      chatId: 'ch-est-wait-thanks',
-      itemId: 'it-2',
-      clientName: 'Клиент',
-      cargo: 'металл',
-      weight: '2 тонны',
-      volume: 'Не указан',
-      route: 'Ижевск — Воткинск',
-      paymentMethod: 'наличные',
-      details: null,
+    saveSession('ch-est-wait-thanks', 'LLM', {
+      ...LLM_DATA_BASE,
+      chatMode: 'estimate_wait',
+      llmMessages: [{ role: 'assistant', content: 'Расчет в работе.' }],
     });
     const { handleConversation } = await import('./service.js');
     const reply = await handleConversation('ch-est-wait-thanks', 'хорошо спасибо');
@@ -180,16 +174,10 @@ describe('conversation service templates', () => {
   });
 
   it('accepts phone in estimate_wait mode and thanks', async () => {
-    upsertChatEstimateRequest({
-      chatId: 'ch-est-wait-phone',
-      itemId: 'it-2',
-      clientName: 'Клиент',
-      cargo: 'металл',
-      weight: '2 тонны',
-      volume: 'Не указан',
-      route: 'Ижевск — Воткинск',
-      paymentMethod: 'наличные',
-      details: null,
+    saveSession('ch-est-wait-phone', 'LLM', {
+      ...LLM_DATA_BASE,
+      chatMode: 'estimate_wait',
+      llmMessages: [{ role: 'assistant', content: 'Расчет в работе.' }],
     });
     const { handleConversation } = await import('./service.js');
     const reply = await handleConversation('ch-est-wait-phone', 'давайте по номеру 89658824885');
@@ -437,6 +425,14 @@ describe('conversation service templates', () => {
     const { handleConversation } = await import('./service.js');
     await handleConversation('ch-indirect-refuse-has', 'привет');
     const reply = await handleConversation('ch-indirect-refuse-has', 'детали все есть');
+    expect(reply).toBe(ESTIMATE_ONLY_PROMPT);
+    expect(runLlmTurn).not.toHaveBeenCalled();
+  });
+
+  it('switches to estimate-only mode on indirect refusal "все детали выше"', async () => {
+    const { handleConversation } = await import('./service.js');
+    await handleConversation('ch-indirect-refuse-above', 'привет');
+    const reply = await handleConversation('ch-indirect-refuse-above', 'все детали выше');
     expect(reply).toBe(ESTIMATE_ONLY_PROMPT);
     expect(runLlmTurn).not.toHaveBeenCalled();
   });
