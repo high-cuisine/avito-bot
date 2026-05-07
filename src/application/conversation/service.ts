@@ -602,14 +602,21 @@ export async function handleConversation(
 
   appendTurn(data, text, result.newHistoryEntries);
 
+  const finalMode = data.chatMode ?? llmMode;
   if (result.sessionEnded) {
-    deleteSession(chatId);
-    logger.info({ chatId, mode }, 'Conversation completed (tool submit)');
+    if (finalMode === 'survey_estimate_only') {
+      data.chatMode = 'estimate_wait';
+      data.postQuotePhase = undefined;
+      saveSession(chatId, LLM_STATE, data);
+      logger.info({ chatId, mode, nextMode: 'estimate_wait' }, 'Conversation completed (chat-estimate saved)');
+    } else {
+      deleteSession(chatId);
+      logger.info({ chatId, mode }, 'Conversation completed (tool submit)');
+    }
   } else {
     saveSession(chatId, LLM_STATE, data);
   }
 
-  const finalMode = data.chatMode ?? llmMode;
   const finalReply = enforceNoPhoneInEstimateMode(finalMode, result.reply);
   if (finalMode === 'survey_estimate_only' && PALLET_RE.test(text) && asksVolumeOrFloor(finalReply)) {
     const collected = collectUserTextForEstimate(history, text);

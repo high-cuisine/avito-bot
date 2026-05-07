@@ -541,6 +541,34 @@ describe('conversation service templates', () => {
     expect(getClientByChatId('ch-est-phone-late')?.phone).toBe('+79658824885');
   });
 
+  it('keeps estimate-wait after chat-estimate submit and replies dry on thanks', async () => {
+    runLlmTurn.mockResolvedValueOnce({
+      reply: 'Спасибо! Параметры для расчета сохранены. Как только расчет будет готов, мы ответим в этом чате.',
+      newHistoryEntries: [
+        {
+          role: 'assistant',
+          content:
+            'Спасибо! Параметры для расчета сохранены. Как только расчет будет готов, мы ответим в этом чате.',
+        },
+      ],
+      sessionEnded: true,
+    });
+    saveSession('ch-est-done-thanks', 'LLM', {
+      ...LLM_DATA_BASE,
+      chatMode: 'survey_estimate_only',
+      llmMessages: [{ role: 'assistant', content: ESTIMATE_ONLY_PROMPT }],
+    });
+    const { handleConversation } = await import('./service.js');
+    const done = await handleConversation('ch-est-done-thanks', 'да, европалеты');
+    expect(done).toBe(
+      'Спасибо! Параметры для расчета сохранены. Как только расчет будет готов, мы ответим в этом чате.',
+    );
+    expect(getSession('ch-est-done-thanks')?.data.chatMode).toBe('estimate_wait');
+
+    const thanks = await handleConversation('ch-est-done-thanks', 'хорошо спасибо');
+    expect(thanks).toBe('Пожалуйста, пишите если появятся вопросы.');
+  });
+
   it('returns fixed estimate-only questionnaire when mode starts without assistant history', async () => {
     saveSession('ch-est-empty-history', 'LLM', {
       ...LLM_DATA_BASE,
