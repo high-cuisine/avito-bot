@@ -402,6 +402,11 @@ export async function handleConversation(
   const history: LlmChatMessage[] = data.llmMessages ?? [];
 
   if (mode === 'phone_intent' && !history.some((m) => m.role === 'assistant')) {
+    const phoneFromFirstMessage = normalizePhone(text);
+    if (phoneFromFirstMessage) {
+      data.invalidPhoneAttempt = undefined;
+      return completePhoneOnlyLead(chatId, data, phoneFromFirstMessage);
+    }
     appendTurn(data, text, [{ role: 'assistant', content: PHONE_INTENT_OPENING_REPLY }]);
     saveSession(chatId, LLM_STATE, data);
     return PHONE_INTENT_OPENING_REPLY;

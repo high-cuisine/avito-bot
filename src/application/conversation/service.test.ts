@@ -83,8 +83,9 @@ describe('conversation service templates', () => {
   it('accepts phone from the very first message', async () => {
     const { handleConversation } = await import('./service.js');
     const reply = await handleConversation('ch-first-phone', 'добрый день, мой номер 8 (900) 555-44-33');
-    expect(reply).toBe('Здравствуйте. Напишите свой номер телефона, свяжемся с Вами и обсудим детали грузоперевозки.');
-    expect(getSession('ch-first-phone')?.data.chatMode).toBe('phone_intent');
+    expect(reply).toBe('Спасибо, мы перезвоним вам в ближайшее время.');
+    expect(getSession('ch-first-phone')).toBeNull();
+    expect(getClientByChatId('ch-first-phone')?.phone).toBe('+79005554433');
   });
 
   it('answers callback-hours after phone-only completion', async () => {
