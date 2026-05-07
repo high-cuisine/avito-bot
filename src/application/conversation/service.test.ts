@@ -111,7 +111,7 @@ describe('conversation service templates', () => {
     await handleConversation('ch-thanks-msg', '+79000000000');
 
     const reply = await handleConversation('ch-thanks-msg', 'спасибо');
-    expect(reply).toBe('Пожалуйста! Если появятся вопросы по текущей перевозке, напишите — подскажу.');
+    expect(reply).toBe('Пожалуйста, пишите если появятся вопросы.');
   });
 
   it('asks clarifying question when client with saved phone writes again', async () => {
@@ -141,7 +141,7 @@ describe('conversation service templates', () => {
     });
     const { handleConversation } = await import('./service.js');
     const reply = await handleConversation('ch-engaged-thanks', 'спасибо');
-    expect(reply).toBe('Пожалуйста! Если появятся вопросы по текущей перевозке, напишите — подскажу.');
+    expect(reply).toBe('Пожалуйста, пишите если появятся вопросы.');
   });
 
   it('keeps estimate-wait context after restart and replies with waiting message', async () => {
@@ -176,7 +176,7 @@ describe('conversation service templates', () => {
     });
     const { handleConversation } = await import('./service.js');
     const reply = await handleConversation('ch-est-wait-thanks', 'хорошо спасибо');
-    expect(reply).toBe('Спасибо! Расчет в работе, как только будет готов — сразу напишем сюда.');
+    expect(reply).toBe('Пожалуйста, пишите если появятся вопросы.');
   });
 
   it('accepts phone in estimate_wait mode and thanks', async () => {
