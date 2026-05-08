@@ -423,6 +423,33 @@ describe('conversation service templates', () => {
     expect(reply).not.toContain('по длине пола');
   });
 
+  it('anchors sequential short answer to requested field before llm', async () => {
+    runLlmTurn.mockResolvedValueOnce({
+      reply: 'Принято. Уточните, пожалуйста, характер груза.',
+      newHistoryEntries: [{ role: 'assistant', content: 'Принято. Уточните, пожалуйста, характер груза.' }],
+      sessionEnded: false,
+    });
+    saveSession('ch-sequential-anchor', 'LLM', {
+      ...LLM_DATA_BASE,
+      chatMode: 'survey_estimate_only',
+      llmMessages: [
+        { role: 'assistant', content: ESTIMATE_ONLY_PROMPT },
+        {
+          role: 'assistant',
+          content:
+            'Принято. Для расчета в чате без номера уточните, пожалуйста: маршрут, характер груза, объем, форму оплаты, сколько метров по длине пола займет груз в кузове.',
+        },
+      ],
+    });
+
+    const { handleConversation } = await import('./service.js');
+    const reply = await handleConversation('ch-sequential-anchor', 'ростов краснодар');
+
+    expect(reply).toBe('Принято. Уточните, пожалуйста, характер груза.');
+    expect(runLlmTurn).toHaveBeenCalledOnce();
+    expect(runLlmTurn.mock.calls[0]?.[0]).toBe('маршрут: ростов краснодар');
+  });
+
   it('switches to estimate-only mode on "второй вариант"', async () => {
     const { handleConversation } = await import('./service.js');
     await handleConversation('ch-second-option', 'привет');

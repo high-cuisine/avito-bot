@@ -302,6 +302,74 @@ function asksCoreEstimateFields(reply: string): boolean {
   return /маршрут|характер\s+груза|вес|форму\s+оплаты/.test(t);
 }
 
+type EstimateField = 'route' | 'cargo' | 'weight' | 'volume' | 'payment' | 'floor';
+
+function extractRequestedEstimateFieldsFromHistory(history: LlmChatMessage[]): EstimateField[] {
+  const lastAssistant = [...history]
+    .reverse()
+    .find((m): m is Extract<LlmChatMessage, { role: 'assistant' }> => m.role === 'assistant');
+  if (!lastAssistant) return [];
+  const t = lastAssistant.content.toLowerCase();
+  if (!t.includes('уточните') || !t.includes('расчета в чате без номера')) return [];
+
+  const fields: EstimateField[] = [];
+  if (t.includes('маршрут')) fields.push('route');
+  if (t.includes('характер груза')) fields.push('cargo');
+  if (t.includes('вес')) fields.push('weight');
+  if (t.includes('объем')) fields.push('volume');
+  if (t.includes('форму оплаты')) fields.push('payment');
+  if (t.includes('сколько метров по длине пола')) fields.push('floor');
+  return fields;
+}
+
+function inferEstimateFieldFromText(text: string): EstimateField | null {
+  const t = text.toLowerCase();
+  if (PAYMENT_RE.test(t)) return 'payment';
+  if (WEIGHT_RE.test(t)) return 'weight';
+  if (VOLUME_RE.test(t) || PALLET_RE.test(t)) return 'volume';
+  if (FLOOR_METERS_RE.test(t)) return 'floor';
+  if (
+    /\b(мск|москва|спб|санкт-?петербург)\b/.test(t) ||
+    /(откуда|куда|маршрут|загрузк|выгруз|разгруз)/.test(t) ||
+    /\b.+\s*[-–—>]\s*.+\b/.test(t)
+  ) {
+    return 'route';
+  }
+  if (/(груз|стекл|мебел|оборуд|короб|паллет|товар|доск|даск|брус|лист)/.test(t)) return 'cargo';
+  return null;
+}
+
+function fieldLabel(field: EstimateField): string {
+  switch (field) {
+    case 'route':
+      return 'маршрут';
+    case 'cargo':
+      return 'характер груза';
+    case 'weight':
+      return 'вес';
+    case 'volume':
+      return 'объем';
+    case 'payment':
+      return 'форма оплаты';
+    case 'floor':
+      return 'длина по полу';
+    default:
+      return 'уточнение';
+  }
+}
+
+function anchorSequentialEstimateAnswer(history: LlmChatMessage[], text: string): string {
+  const clean = text.trim();
+  if (!clean) return clean;
+  const requested = extractRequestedEstimateFieldsFromHistory(history);
+  if (requested.length === 0) return clean;
+  if (hasConcreteEstimateData(clean)) return clean;
+
+  const inferred = inferEstimateFieldFromText(clean);
+  const target = inferred ?? requested[0];
+  return `${fieldLabel(target)}: ${clean}`;
+}
+
 function emptyData(): SessionData {
   return {
     itemId: '',
@@ -748,7 +816,8 @@ export async function handleConversation(
       return ESTIMATE_DIFFICULTY_PHONE_REPLY;
     }
 
-    const collected = collectUserTextForEstimate(history, text);
+    const normalizedAnswer = anchorSequentialEstimateAnswer(history, text);
+    const collected = collectUserTextForEstimate(history, normalizedAnswer);
     if (!hasConcreteEstimateData(collected)) {
       appendTurn(data, text, [{ role: 'assistant', content: ESTIMATE_ONLY_START_PROMPT }]);
       saveSession(chatId, LLM_STATE, data);
@@ -764,7 +833,9 @@ export async function handleConversation(
   const currentMode = data.chatMode ?? mode;
   const llmMode: NonNullable<SessionData['chatMode']> =
     currentMode === 'post_quote' ? 'phone_backfill' : currentMode;
-  const result = await runLlmTurn(text, history, {
+  const llmUserText =
+    llmMode === 'survey_estimate_only' ? anchorSequentialEstimateAnswer(history, text) : text;
+  const result = await runLlmTurn(llmUserText, history, {
     chatMode: llmMode,
     chatId,
     clientName: data.clientName,
