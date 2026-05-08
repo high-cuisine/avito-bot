@@ -56,6 +56,11 @@ const ESTIMATE_ONLY_PROMPT =
   '5.Форму оплаты(наличные,безнал б/ндс, безнал с НДС)\n' +
   '6.Сколько примерно в метрах займет Ваш груз в кузове у нас по длине пола(при ширине кузова 2.4 метра)';
 
+const ESTIMATE_SAVED_REPLY =
+  'Спасибо! Параметры для расчета сохранены. Как только расчет будет готов, мы ответим в этом чате.\n\n' +
+  'И на всякий случай - если вдруг возникнут перебои со связью или сообщение не дойдёт вовремя, можем дублировать результат вам на телефон. Оставьте номер, если будет удобно - чтобы точно не потерять контакт.\n\n' +
+  'Хорошего вам дня';
+
 describe('conversation service templates', () => {
   beforeEach(() => {
     vi.useFakeTimers();
@@ -557,12 +562,11 @@ describe('conversation service templates', () => {
 
   it('keeps estimate-wait after chat-estimate submit and replies dry on thanks', async () => {
     runLlmTurn.mockResolvedValueOnce({
-      reply: 'Спасибо! Параметры для расчета сохранены. Как только расчет будет готов, мы ответим в этом чате.',
+      reply: ESTIMATE_SAVED_REPLY,
       newHistoryEntries: [
         {
           role: 'assistant',
-          content:
-            'Спасибо! Параметры для расчета сохранены. Как только расчет будет готов, мы ответим в этом чате.',
+          content: ESTIMATE_SAVED_REPLY,
         },
       ],
       sessionEnded: true,
@@ -574,9 +578,7 @@ describe('conversation service templates', () => {
     });
     const { handleConversation } = await import('./service.js');
     const done = await handleConversation('ch-est-done-thanks', 'да, европалеты');
-    expect(done).toBe(
-      'Спасибо! Параметры для расчета сохранены. Как только расчет будет готов, мы ответим в этом чате.',
-    );
+    expect(done).toBe(ESTIMATE_SAVED_REPLY);
     expect(getSession('ch-est-done-thanks')?.data.chatMode).toBe('estimate_wait');
 
     const thanks = await handleConversation('ch-est-done-thanks', 'хорошо спасибо');

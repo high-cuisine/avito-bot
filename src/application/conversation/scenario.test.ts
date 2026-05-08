@@ -38,6 +38,11 @@ const ESTIMATE_ONLY_PROMPT =
   '5.Форму оплаты(наличные,безнал б/ндс, безнал с НДС)\n' +
   '6.Сколько примерно в метрах займет Ваш груз в кузове у нас по длине пола(при ширине кузова 2.4 метра)';
 
+const ESTIMATE_SAVED_REPLY =
+  'Спасибо! Параметры для расчета сохранены. Как только расчет будет готов, мы ответим в этом чате.\n\n' +
+  'И на всякий случай - если вдруг возникнут перебои со связью или сообщение не дойдёт вовремя, можем дублировать результат вам на телефон. Оставьте номер, если будет удобно - чтобы точно не потерять контакт.\n\n' +
+  'Хорошего вам дня';
+
 const LLM_DATA_BASE: SessionData = {
   itemId: 'it-1',
   clientName: 'Клиент',
@@ -141,20 +146,17 @@ describe('conversation scenarios from scenario-cases.md', () => {
     expect(step4).toBe('Принято, передаю заявку на расчет.');
 
     runLlmTurn.mockResolvedValueOnce({
-      reply: 'Спасибо! Параметры для расчета сохранены. Как только расчет будет готов, мы ответим в этом чате.',
+      reply: ESTIMATE_SAVED_REPLY,
       newHistoryEntries: [
         {
           role: 'assistant',
-          content:
-            'Спасибо! Параметры для расчета сохранены. Как только расчет будет готов, мы ответим в этом чате.',
+          content: ESTIMATE_SAVED_REPLY,
         },
       ],
       sessionEnded: true,
     });
     const step5 = await handleConversation('scn-refusal-structured-pallets', 'нет');
-    expect(step5).toBe(
-      'Спасибо! Параметры для расчета сохранены. Как только расчет будет готов, мы ответим в этом чате.',
-    );
+    expect(step5).toBe(ESTIMATE_SAVED_REPLY);
     expect(getSession('scn-refusal-structured-pallets')?.data.chatMode).toBe('estimate_wait');
   });
 
@@ -295,19 +297,17 @@ describe('conversation scenarios from scenario-cases.md', () => {
     expect(step3).toBe('Принято. Все данные есть, передаю на расчет.');
 
     runLlmTurn.mockResolvedValueOnce({
-      reply: 'Спасибо! Параметры для расчета сохранены. Как только расчет будет готов, мы ответим в этом чате.',
+      reply: ESTIMATE_SAVED_REPLY,
       newHistoryEntries: [
         {
           role: 'assistant',
-          content: 'Спасибо! Параметры для расчета сохранены. Как только расчет будет готов, мы ответим в этом чате.',
+          content: ESTIMATE_SAVED_REPLY,
         },
       ],
       sessionEnded: true,
     });
     const step4 = await handleConversation('scn-all-data', 'да');
-    expect(step4).toBe(
-      'Спасибо! Параметры для расчета сохранены. Как только расчет будет готов, мы ответим в этом чате.',
-    );
+    expect(step4).toBe(ESTIMATE_SAVED_REPLY);
     expect(getSession('scn-all-data')?.data.chatMode).toBe('estimate_wait');
   });
 

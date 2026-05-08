@@ -778,7 +778,9 @@ export async function runLlmTurn(
   // чтобы она не могла снова попросить телефон до публикации цены в чате.
   if (ctx.chatMode === 'survey_estimate_only' && sessionEnded && !needsRecoveryPrompt) {
     const doneText =
-      'Спасибо! Параметры для расчета сохранены. Как только расчет будет готов, мы ответим в этом чате.';
+      'Спасибо! Параметры для расчета сохранены. Как только расчет будет готов, мы ответим в этом чате.\n\n' +
+      'И на всякий случай - если вдруг возникнут перебои со связью или сообщение не дойдёт вовремя, можем дублировать результат вам на телефон. Оставьте номер, если будет удобно - чтобы точно не потерять контакт.\n\n' +
+      'Хорошего вам дня';
     newHistoryEntries.push({ role: 'assistant', content: doneText });
     return { reply: doneText, newHistoryEntries, sessionEnded: true };
   }

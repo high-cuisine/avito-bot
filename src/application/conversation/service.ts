@@ -154,6 +154,7 @@ function enforceNoPhoneInEstimateMode(mode: SessionData['chatMode'], reply: stri
     mode === 'survey_estimate_only' || mode === 'estimate_wait'
       ? reply.replace(/\*/g, '')
       : reply;
+  if (cleaned.startsWith('Спасибо! Параметры для расчета сохранены.')) return cleaned;
   if (cleaned === ESTIMATE_DIFFICULTY_PHONE_REPLY) return cleaned;
   if ((mode === 'survey_estimate_only' || mode === 'estimate_wait') && PHONE_REQUEST_PATTERN.test(cleaned)) {
     return ESTIMATE_ONLY_START_PROMPT;
