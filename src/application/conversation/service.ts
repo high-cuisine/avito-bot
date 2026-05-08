@@ -111,6 +111,7 @@ const PHONE_REQUEST_PATTERN =
 const INVALID_PHONE_REPLY = 'Ваш номер указан не верно, просьба проверить цифры.';
 const PAYMENT_RE = /(налич|безнал|ндс|с\s*ндс|б\/ндс)/i;
 const VOLUME_RE = /(об[ъь]?[её]м|м3|куб|кубометр)/i;
+const WEIGHT_RE = /(вес|кг|тонн|тн|\d+\s*т(?:\.|\b))/i;
 const FLOOR_METERS_RE = /(метр|по\s+длине\s+пола|длина\s+пола|в\s+кузове)/i;
 const PALLET_RE = /(\d+[\s.,]*)?(палет|паллет|паллета|паллеты|паллетов|поддон|поддона|поддонов)/i;
 const ESTIMATE_DIFFICULTY_RE =
@@ -228,7 +229,7 @@ function buildEstimateOnlyFollowupFromText(text: string): string | null {
     (l) => /(\d+\s*[xх*]\s*\d+(\s*[xх*]\s*\d+)?)|(\d+\s*шт)|(\bшт\b)/.test(l),
   );
   const hasCargo = normalized.some((l) => /(груз|стекл|мебел|оборуд|короб|паллет|товар|доск|даск|брус|лист)/.test(l)) || hasCargoListLike;
-  const hasWeight = normalized.some((l) => /(вес|кг|тонн|тн|т\.)/.test(l));
+  const hasWeight = normalized.some((l) => WEIGHT_RE.test(l));
   const hasPalletInfo = normalized.some((l) => PALLET_RE.test(l));
   const hasVolume = normalized.some((l) => VOLUME_RE.test(l)) || hasPalletInfo;
   const hasPayment = normalized.some((l) => PAYMENT_RE.test(l));
@@ -273,7 +274,7 @@ function hasConcreteEstimateData(text: string): boolean {
   const hasSpecificCargo = normalized.some((l) =>
     /(стекл|мебел|оборуд|короб|паллет|товар|доск|даск|брус|лист)/.test(l),
   );
-  const hasWeight = normalized.some((l) => /(вес|кг|тонн|тн|т\.)/.test(l));
+  const hasWeight = normalized.some((l) => WEIGHT_RE.test(l));
   const hasPalletInfo = normalized.some((l) => PALLET_RE.test(l));
   const hasVolume = normalized.some((l) => VOLUME_RE.test(l)) || hasPalletInfo;
   const hasPayment = normalized.some((l) => PAYMENT_RE.test(l));

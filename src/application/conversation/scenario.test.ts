@@ -169,6 +169,16 @@ describe('conversation scenarios from scenario-cases.md', () => {
     expect(reply).toBe('Здравствуйте. Напишите свой номер телефона, свяжемся с Вами и обсудим детали грузоперевозки.');
   });
 
+  it('scn-nonstandard-greeting-then-chat-choice', async () => {
+    const { handleConversation } = await import('./service.js');
+
+    const step1 = await handleConversation('scn-nonstandard-greeting', 'это тест.Приветствую');
+    expect(step1).toBe('Здравствуйте. Напишите свой номер телефона, свяжемся с Вами и обсудим детали грузоперевозки.');
+
+    const step2 = await handleConversation('scn-nonstandard-greeting', 'давайте в чате');
+    expect(step2).toBe(ESTIMATE_ONLY_PROMPT);
+  });
+
   it('scn-refusal-without-data-keeps-template', async () => {
     const { handleConversation } = await import('./service.js');
     await handleConversation('scn-refusal-without-data-keeps-template', 'добрый день');
