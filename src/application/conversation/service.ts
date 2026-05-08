@@ -13,6 +13,7 @@ import {
   CALLBACK_HOURS_DASH,
   ENGAGED_THANKS_REPLY,
   ENGAGED_REOPEN_PROMPT,
+  ESTIMATE_DIFFICULTY_PHONE_REPLY,
   ESTIMATE_WAITING_REPLY,
   ESTIMATE_WAITING_THANKS_REPLY,
   ESTIMATE_ONLY_START_PROMPT,
@@ -112,6 +113,8 @@ const PAYMENT_RE = /(налич|безнал|ндс|с\s*ндс|б\/ндс)/i;
 const VOLUME_RE = /(об[ъь]?[её]м|м3|куб|кубометр)/i;
 const FLOOR_METERS_RE = /(метр|по\s+длине\s+пола|длина\s+пола|в\s+кузове)/i;
 const PALLET_RE = /(\d+[\s.,]*)?(палет|паллет|паллета|паллеты|паллетов|поддон|поддона|поддонов)/i;
+const ESTIMATE_DIFFICULTY_RE =
+  /(затрудня|затруднит|сложн[оа]\s+ответ|не\s+(знаю|понимаю|разбираюсь|могу\s+(сказать|ответить|понять|оценить))|как\s+(посчитать|измерить|указать|понять|определить)|не\s+уверен)/i;
 
 function isPhoneRefusalText(text: string): boolean {
   if (!text) return false;
@@ -141,11 +144,17 @@ function isWithoutPhoneChoiceText(text: string): boolean {
   );
 }
 
+function isEstimateDifficultyText(text: string): boolean {
+  if (!text) return false;
+  return ESTIMATE_DIFFICULTY_RE.test(text.toLowerCase().replace(/\s+/g, ' ').trim());
+}
+
 function enforceNoPhoneInEstimateMode(mode: SessionData['chatMode'], reply: string): string {
   const cleaned =
     mode === 'survey_estimate_only' || mode === 'estimate_wait'
       ? reply.replace(/\*/g, '')
       : reply;
+  if (cleaned === ESTIMATE_DIFFICULTY_PHONE_REPLY) return cleaned;
   if ((mode === 'survey_estimate_only' || mode === 'estimate_wait') && PHONE_REQUEST_PATTERN.test(cleaned)) {
     return ESTIMATE_ONLY_START_PROMPT;
   }
@@ -716,7 +725,7 @@ export async function handleConversation(
   }
 
   if (mode === 'survey_estimate_only') {
-      const phone = normalizePhoneFromMessage(text);
+    const phone = normalizePhoneFromMessage(text);
     if (phone) {
       const exec = await executeSubmitPhoneBackfill(chatId, { phone });
       if (!exec.ok) {
@@ -729,6 +738,12 @@ export async function handleConversation(
       data.phone = phone;
       saveSession(chatId, LLM_STATE, data);
       return THANKS_CALLBACK_SOON;
+    }
+
+    if (isEstimateDifficultyText(text)) {
+      appendTurn(data, text, [{ role: 'assistant', content: ESTIMATE_DIFFICULTY_PHONE_REPLY }]);
+      saveSession(chatId, LLM_STATE, data);
+      return ESTIMATE_DIFFICULTY_PHONE_REPLY;
     }
 
     const collected = collectUserTextForEstimate(history, text);

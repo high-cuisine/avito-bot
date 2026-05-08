@@ -176,6 +176,21 @@ describe('conversation scenarios from scenario-cases.md', () => {
     expect(step3).toBe(ESTIMATE_ONLY_PROMPT);
   });
 
+  it('scn-estimate-difficulty-offers-phone-call', async () => {
+    const { handleConversation } = await import('./service.js');
+    await handleConversation('scn-estimate-difficulty', 'добрый день');
+    await handleConversation('scn-estimate-difficulty', 'номер не дам');
+    runLlmTurn.mockClear();
+
+    const reply = await handleConversation('scn-estimate-difficulty', 'не знаю как ответить на эти вопросы');
+
+    expect(reply).toBe(
+      'Если затрудняетесь ответить на вопросы по расчету, напишите свой номер телефона — свяжемся с Вами и проговорим все моменты.',
+    );
+    expect(runLlmTurn).not.toHaveBeenCalled();
+    expect(getSession('scn-estimate-difficulty')?.data.chatMode).toBe('survey_estimate_only');
+  });
+
   it('scn-partial-data-partition-followup', async () => {
     const { handleConversation } = await import('./service.js');
     await handleConversation('scn-partial-data-partition-followup', 'добрый день');
