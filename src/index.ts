@@ -27,12 +27,12 @@ async function main(): Promise<void> {
     );
   }
 
+  // REST API должен слушать порт до OAuth Авито: иначе при зависшем/медленном token-запросе 1С и curl видят Connection reset / нет сервера.
+  startApiServer();
+
   await getAccessToken();
   const userId = await resolveUserId();
   logger.info('Operating as user_id = %s', userId);
-
-  // Always start the 1C API server (+ веб-админка /admin при ADMIN_LOGIN/ADMIN_PASSWORD)
-  startApiServer();
 
   if (config.mode === 'webhook') {
     await startWebhookServer();

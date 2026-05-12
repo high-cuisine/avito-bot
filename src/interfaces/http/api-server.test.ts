@@ -127,6 +127,46 @@ describe('createApiApp', () => {
     expect(res.status).toBe(502);
   });
 
+  it('GET /api/v1/chat-estimates/:id/messages returns transcript', async () => {
+    upsertChatEstimateRequest({
+      chatId: 'est-dialog-ch',
+      itemId: '1',
+      clientName: 'К',
+      cargo: 'г',
+      weight: '1',
+      volume: '1',
+      route: 'a',
+      paymentMethod: 'б',
+      details: null,
+    });
+    const { getChatEstimates } = await import('../../infrastructure/storage/repository.js');
+    const id = getChatEstimates().find((e) => e.chatId === 'est-dialog-ch')!.id;
+
+    getChatMessagesAll.mockResolvedValueOnce([
+      {
+        id: 'e1',
+        author_id: 111,
+        chat_id: 'est-dialog-ch',
+        created: 1700000500,
+        type: 'text',
+        content: { text: 'Цена?' },
+      },
+    ]);
+
+    const { createApiApp } = await import('./api-server.js');
+    const res = await request(createApiApp())
+      .get(`/api/v1/chat-estimates/${id}/messages`)
+      .set('Authorization', `Bearer ${API_TOKEN}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({
+      estimateId: id,
+      chatId: 'est-dialog-ch',
+      messages: [{ created: 1700000500, direction: 'in', text: 'Цена?' }],
+    });
+    expect(getChatMessagesAll).toHaveBeenCalledWith('est-dialog-ch');
+  });
+
   it('POST /api/v1/clients/:id/send-message sends text and sets botStopped', async () => {
     saveClient({
       chatId: 'api-send-chat',

@@ -318,7 +318,7 @@ const swaggerDocument = {
       },
       ClientDialog: {
         type: 'object',
-        description: 'Диалог из чата Авито по заявке (хронологический порядок)',
+        description: 'Диалог из чата Авито по заявке clients (хронологический порядок)',
         properties: {
           clientId: { type: 'integer' },
           chatId: { type: 'string' },
@@ -328,6 +328,20 @@ const swaggerDocument = {
           },
         },
         required: ['clientId', 'chatId', 'messages'],
+      },
+      ChatEstimateDialog: {
+        type: 'object',
+        description:
+          'Диалог из чата Авито по записи расчёта без телефона chat-estimates (тот же формат реплик, что у ClientDialog)',
+        properties: {
+          estimateId: { type: 'integer' },
+          chatId: { type: 'string' },
+          messages: {
+            type: 'array',
+            items: { $ref: '#/components/schemas/DialogMessage' },
+          },
+        },
+        required: ['estimateId', 'chatId', 'messages'],
       },
     },
   },
@@ -450,7 +464,7 @@ const swaggerDocument = {
       get: {
         summary: 'Диалог из Авито (только реплики)',
         description:
-          'По внутреннему ID заявки загружает историю чата и возвращает только текстовые реплики с временем и направлением (клиент `in` / наш аккаунт `out`).',
+          'По внутреннему ID из таблицы clients загружает историю чата. Для строк расчёта без телефона используйте GET /chat-estimates/{id}/messages.',
         operationId: 'getClientConversation',
         tags: ['Заявки'],
         parameters: [
@@ -658,6 +672,52 @@ const swaggerDocument = {
           },
           '404': {
             description: 'Не найдено',
+            content: {
+              'application/json': { schema: { $ref: '#/components/schemas/Error' } },
+            },
+          },
+        },
+      },
+    },
+    '/chat-estimates/{id}/messages': {
+      get: {
+        summary: 'Диалог из Авито для расчёта без телефона',
+        description:
+          'По внутреннему ID из GET /chat-estimates выгружает полную историю чата из Авито и возвращает упрощённые реплики (как GET /clients/{id}/messages).',
+        operationId: 'getChatEstimateConversation',
+        tags: ['Расчёт без телефона'],
+        parameters: [
+          {
+            name: 'id',
+            in: 'path',
+            required: true,
+            description: 'Внутренний ID записи (как в GET /chat-estimates/{id})',
+            schema: { type: 'integer', example: 1 },
+          },
+        ],
+        responses: {
+          '200': {
+            description: 'Успешно',
+            content: {
+              'application/json': {
+                schema: { $ref: '#/components/schemas/ChatEstimateDialog' },
+              },
+            },
+          },
+          '401': {
+            description: 'Не авторизован',
+            content: {
+              'application/json': { schema: { $ref: '#/components/schemas/Error' } },
+            },
+          },
+          '404': {
+            description: 'Запись не найдена',
+            content: {
+              'application/json': { schema: { $ref: '#/components/schemas/Error' } },
+            },
+          },
+          '502': {
+            description: 'Ошибка API Авито при загрузке сообщений',
             content: {
               'application/json': { schema: { $ref: '#/components/schemas/Error' } },
             },
@@ -908,6 +968,13 @@ export function createApiApp(): express.Application {
     }
     const client = getClientById(id);
     if (!client) {
+      if (getChatEstimateById(id)) {
+        res.status(404).json({
+          error:
+            'Это запись расчёта без телефона. Используйте GET /api/v1/chat-estimates/:id/messages',
+        });
+        return;
+      }
       res.status(404).json({ error: 'Заявка не найдена' });
       return;
     }
@@ -996,6 +1063,38 @@ export function createApiApp(): express.Application {
     const since = req.query.since as string | undefined;
     const items = since ? getChatEstimatesSince(since) : getChatEstimates();
     res.json({ total: items.length, items });
+  });
+
+  // GET /api/v1/chat-estimates/:id/messages — история для расчёта без телефона
+  app.get('/api/v1/chat-estimates/:id/messages', requireAuth, async (req: Request, res: Response) => {
+    const id = parseInt(String(req.params.id), 10);
+    if (isNaN(id)) {
+      res.status(400).json({ error: 'Некорректный ID' });
+      return;
+    }
+    const estimate = getChatEstimateById(id);
+    if (!estimate) {
+      if (getClientById(id)) {
+        res.status(404).json({
+          error: 'Это заявка из clients. Используйте GET /api/v1/clients/:id/messages',
+        });
+        return;
+      }
+      res.status(404).json({ error: 'Запись не найдена' });
+      return;
+    }
+    try {
+      const rawMessages = await getChatMessagesAll(estimate.chatId);
+      const messages = await dialogFromAvitoMessages(rawMessages);
+      res.json({
+        estimateId: estimate.id,
+        chatId: estimate.chatId,
+        messages,
+      });
+    } catch (err) {
+      logger.error({ err, chatId: estimate.chatId }, 'chat-estimates/:id/messages: Avito API failed');
+      res.status(502).json({ error: 'Не удалось получить сообщения из Авито' });
+    }
   });
 
   // GET /api/v1/chat-estimates/:id
