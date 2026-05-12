@@ -127,6 +127,79 @@ describe('createApiApp', () => {
     expect(res.status).toBe(502);
   });
 
+  it('POST /api/v1/clients/:id/send-message sends text and sets botStopped', async () => {
+    saveClient({
+      chatId: 'api-send-chat',
+      itemId: '1',
+      clientName: 'Вася',
+      cargo: 'x',
+      route: 'a',
+      paymentMethod: 'б',
+      phone: '+79111111111',
+    });
+    const { getClientByChatId, getClientById } = await import('../../infrastructure/storage/repository.js');
+    const id = getClientByChatId('api-send-chat')!.id;
+    expect(getClientById(id)?.botStopped).toBe(false);
+
+    const { createApiApp } = await import('./api-server.js');
+    const res = await request(createApiApp())
+      .post(`/api/v1/clients/${id}/send-message`)
+      .set('Authorization', `Bearer ${API_TOKEN}`)
+      .send({ text: 'Пишите менеджеру' });
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({
+      ok: true,
+      chat_id: 'api-send-chat',
+      botStopped: true,
+    });
+    expect(sendMessage).toHaveBeenCalledWith('api-send-chat', 'Пишите менеджеру');
+    expect(getClientById(id)?.botStopped).toBe(true);
+  });
+
+  it('POST /api/v1/clients/:id/send-message 400 for empty text', async () => {
+    saveClient({
+      chatId: 'empty-send',
+      itemId: '',
+      clientName: '',
+      cargo: 'x',
+      route: 'a',
+      paymentMethod: 'b',
+      phone: '+79000000002',
+    });
+    const { getClientByChatId } = await import('../../infrastructure/storage/repository.js');
+    const id = getClientByChatId('empty-send')!.id;
+    const { createApiApp } = await import('./api-server.js');
+    const res = await request(createApiApp())
+      .post(`/api/v1/clients/${id}/send-message`)
+      .set('Authorization', `Bearer ${API_TOKEN}`)
+      .send({ text: '   ' });
+    expect(res.status).toBe(400);
+  });
+
+  it('POST send-message 502 and does not set botStopped when Avito fails', async () => {
+    saveClient({
+      chatId: 'fail-send-chat',
+      itemId: '',
+      clientName: '',
+      cargo: 'x',
+      route: 'a',
+      paymentMethod: 'b',
+      phone: '+79000000003',
+    });
+    const { getClientByChatId, getClientById } = await import('../../infrastructure/storage/repository.js');
+    const id = getClientByChatId('fail-send-chat')!.id;
+    sendMessage.mockRejectedValueOnce(new Error('Avito unavailable'));
+
+    const { createApiApp } = await import('./api-server.js');
+    const res = await request(createApiApp())
+      .post(`/api/v1/clients/${id}/send-message`)
+      .set('Authorization', `Bearer ${API_TOKEN}`)
+      .send({ text: 'Привет' });
+    expect(res.status).toBe(502);
+    expect(getClientById(id)?.botStopped).toBe(false);
+  });
+
   it('GET /api/v1/clients/:id returns cargoDetails', async () => {
     saveClient({
       chatId: 'api-client-cargo',

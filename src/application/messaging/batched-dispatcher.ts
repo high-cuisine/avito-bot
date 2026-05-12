@@ -1,6 +1,7 @@
 import { logger } from '../../core/logger.js';
 import type { AvitoChat, AvitoMessage } from '../../integrations/avito/client.js';
 import { sendMessage } from '../../integrations/avito/client.js';
+import { isConversationTakenOver } from './human-takeover.js';
 import { processMessage } from './router.js';
 
 const BATCH_DELAY_MS = 30 * 1000;
@@ -21,6 +22,11 @@ async function flushChatBatch(chatId: string): Promise<void> {
 
   const mergedText = batch.parts.join('\n').trim();
   if (!mergedText) return;
+
+  if (isConversationTakenOver(chatId)) {
+    logger.debug({ chatId }, 'Skip batched reply: conversation taken over via API');
+    return;
+  }
 
   logger.info(
     { chatId, messagesCount: batch.parts.length, delayMs: BATCH_DELAY_MS },

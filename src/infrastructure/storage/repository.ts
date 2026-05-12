@@ -102,7 +102,7 @@ try {
   // column already exists
 }
 try {
-  db.exec('ALTER TABLE chat_estimate_requests ADD COLUMN volume TEXT');
+  db.exec('ALTER TABLE clients ADD COLUMN bot_stopped INTEGER NOT NULL DEFAULT 0');
 } catch {
   // column already exists
 }
@@ -208,12 +208,14 @@ export interface ClientRecord {
   route: string | null;
   paymentMethod: string | null;
   phone: string | null;
+  /** Сообщение через REST API включило ручной режим: бот не отвечает в этом чате. */
+  botStopped: boolean;
   createdAt: string;
 }
 
 const stmtInsertClient = db.prepare(`
-  INSERT INTO clients (chat_id, item_id, client_name, cargo, weight, volume, cargo_details, route, payment_method, phone, created_at)
-  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+  INSERT INTO clients (chat_id, item_id, client_name, cargo, weight, volume, cargo_details, route, payment_method, phone, bot_stopped, created_at)
+  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, datetime('now'))
   ON CONFLICT(chat_id) DO UPDATE SET item_id        = excluded.item_id,
                                      client_name    = excluded.client_name,
                                      cargo          = excluded.cargo,
@@ -227,21 +229,21 @@ const stmtInsertClient = db.prepare(`
 `);
 
 const stmtGetClients = db.prepare(
-  'SELECT id, chat_id, item_id, client_name, cargo, weight, volume, cargo_details, route, payment_method, phone, created_at FROM clients ORDER BY id DESC',
+  'SELECT id, chat_id, item_id, client_name, cargo, weight, volume, cargo_details, route, payment_method, phone, bot_stopped, created_at FROM clients ORDER BY id DESC',
 );
 const stmtGetClientById = db.prepare(
-  'SELECT id, chat_id, item_id, client_name, cargo, weight, volume, cargo_details, route, payment_method, phone, created_at FROM clients WHERE id = ?',
+  'SELECT id, chat_id, item_id, client_name, cargo, weight, volume, cargo_details, route, payment_method, phone, bot_stopped, created_at FROM clients WHERE id = ?',
 );
 const stmtGetClientsSince = db.prepare(
-  `SELECT id, chat_id, item_id, client_name, cargo, weight, volume, cargo_details, route, payment_method, phone, created_at
+  `SELECT id, chat_id, item_id, client_name, cargo, weight, volume, cargo_details, route, payment_method, phone, bot_stopped, created_at
    FROM clients WHERE created_at >= ? ORDER BY id ASC`,
 );
 const stmtDeleteClient = db.prepare('DELETE FROM clients WHERE id = ?');
 const stmtGetClientByChatId = db.prepare(
-  'SELECT id, chat_id, item_id, client_name, cargo, weight, volume, cargo_details, route, payment_method, phone, created_at FROM clients WHERE chat_id = ?',
+  'SELECT id, chat_id, item_id, client_name, cargo, weight, volume, cargo_details, route, payment_method, phone, bot_stopped, created_at FROM clients WHERE chat_id = ?',
 );
 const stmtGetClientsMissingPhone = db.prepare(
-  `SELECT id, chat_id, item_id, client_name, cargo, weight, volume, cargo_details, route, payment_method, phone, created_at
+  `SELECT id, chat_id, item_id, client_name, cargo, weight, volume, cargo_details, route, payment_method, phone, bot_stopped, created_at
    FROM clients
    WHERE phone IS NULL OR trim(phone) = ''
    ORDER BY id ASC`,
@@ -250,6 +252,14 @@ const stmtUpdateClientPhoneByChatId = db.prepare(
   `UPDATE clients
    SET phone = ?
    WHERE chat_id = ?`,
+);
+
+const stmtSetClientTakenOverViaApi = db.prepare(
+  `UPDATE clients SET bot_stopped = 1 WHERE id = ?`,
+);
+
+const stmtGetClientBotStoppedByChatId = db.prepare(
+  `SELECT bot_stopped FROM clients WHERE chat_id = ?`,
 );
 
 const stmtGetRuntimeMode = db.prepare(
@@ -294,6 +304,7 @@ type ClientRow = {
   route: string | null;
   payment_method: string | null;
   phone: string | null;
+  bot_stopped: number;
   created_at: string;
 };
 
@@ -310,6 +321,7 @@ function rowToRecord(r: ClientRow): ClientRecord {
     route: r.route,
     paymentMethod: r.payment_method,
     phone: r.phone,
+    botStopped: (r.bot_stopped ?? 0) === 1,
     createdAt: r.created_at,
   };
 }
@@ -337,6 +349,17 @@ export function getClientsMissingPhone(limit = 100): ClientRecord[] {
 export function updateClientPhoneByChatId(chatId: string, phone: string): boolean {
   const result = stmtUpdateClientPhoneByChatId.run(phone, chatId);
   return result.changes > 0;
+}
+
+/** Бот больше не отвечает в чате (ручное сообщение отправлено через API). */
+export function setClientTakenOverViaApi(clientId: number): boolean {
+  return stmtSetClientTakenOverViaApi.run(clientId).changes > 0;
+}
+
+/** true, если есть заявка с этим chat_id и включён режим только человека */
+export function getClientBotStoppedByChatId(chatId: string): boolean {
+  const row = stmtGetClientBotStoppedByChatId.get(chatId) as { bot_stopped: number } | undefined;
+  return (row?.bot_stopped ?? 0) === 1;
 }
 
 export type RuntimeMode = 'test' | 'prod';

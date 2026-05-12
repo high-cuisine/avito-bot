@@ -14,10 +14,11 @@ import {
   deleteChatEstimateRequest,
   getRuntimeMode,
   setRuntimeMode,
+  setClientTakenOverViaApi,
 } from '../../infrastructure/storage/repository.js';
 import { attachAdminPanel } from './admin-panel.js';
 import type { AvitoMessage } from '../../integrations/avito/client.js';
-import { getChatMessagesAll, resolveUserId } from '../../integrations/avito/client.js';
+import { getChatMessagesAll, resolveUserId, sendMessage } from '../../integrations/avito/client.js';
 
 interface DialogMessageDto {
   /** Unix timestamp (как отдаёт Авито) */
@@ -136,6 +137,12 @@ const swaggerDocument = {
             description: 'Телефон клиента в нормализованном формате',
             example: '+79161234567',
           },
+          botStopped: {
+            type: 'boolean',
+            description:
+              'Если true — уже отправляли сообщение через этот REST API; автоматический бот в этом чате клиенту не отвечает.',
+            example: false,
+          },
           createdAt: {
             type: 'string',
             format: 'date-time',
@@ -246,6 +253,31 @@ const swaggerDocument = {
           chat_id: { type: 'string', description: 'ID чата Авито', example: 'u2i-abc123' },
         },
         required: ['ok'],
+      },
+      SendMessageToClientBody: {
+        type: 'object',
+        properties: {
+          text: {
+            type: 'string',
+            description: 'Текст сообщения в чат клиенту (от имени нашего аккаунта Авито)',
+            example: 'Уточните, пожалуйста, время погрузки.',
+          },
+        },
+        required: ['text'],
+      },
+      SendMessageToClientResponse: {
+        type: 'object',
+        properties: {
+          ok: { type: 'boolean', example: true },
+          chat_id: { type: 'string', description: 'ID чата Авито' },
+          botStopped: {
+            type: 'boolean',
+            description:
+              'После отправки включён режим только человека: бот входящих в этом чате не обрабатывает.',
+            example: true,
+          },
+        },
+        required: ['ok', 'chat_id', 'botStopped'],
       },
       Error: {
         type: 'object',
@@ -445,6 +477,66 @@ const swaggerDocument = {
           },
           '502': {
             description: 'Ошибка API Авито при загрузке сообщений',
+            content: {
+              'application/json': { schema: { $ref: '#/components/schemas/Error' } },
+            },
+          },
+        },
+      },
+    },
+    '/clients/{id}/send-message': {
+      post: {
+        summary: 'Отправить сообщение клиенту и отключить автоответ бота',
+        description:
+          'Отправляет текст в чат Авито. После успешной отправки заявка помечается: больше не ставит ответов LLM в этом диалоге (webhook и поллинг сообщения клиента игнорируются). Отправить можно снова; флаг сохраняется.',
+        operationId: 'sendMessageToClient',
+        tags: ['Заявки'],
+        parameters: [
+          {
+            name: 'id',
+            in: 'path',
+            required: true,
+            description: 'Внутренний ID заявки',
+            schema: { type: 'integer', example: 1 },
+          },
+        ],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: { $ref: '#/components/schemas/SendMessageToClientBody' },
+            },
+          },
+        },
+        responses: {
+          '200': {
+            description: 'Сообщение отправлено, бот заблокирован для этого клиента',
+            content: {
+              'application/json': {
+                schema: { $ref: '#/components/schemas/SendMessageToClientResponse' },
+              },
+            },
+          },
+          '400': {
+            description: 'Нет текста или пустая строка',
+            content: {
+              'application/json': { schema: { $ref: '#/components/schemas/Error' } },
+            },
+          },
+          '401': {
+            description: 'Не авторизован',
+            content: {
+              'application/json': { schema: { $ref: '#/components/schemas/Error' } },
+            },
+          },
+          '404': {
+            description: 'Заявка не найдена',
+            content: {
+              'application/json': { schema: { $ref: '#/components/schemas/Error' } },
+            },
+          },
+          '502': {
+            description: 'Ошибка API Авито при отправке',
             content: {
               'application/json': { schema: { $ref: '#/components/schemas/Error' } },
             },
@@ -762,6 +854,36 @@ export function createApiApp(): express.Application {
     } catch (err) {
       logger.error({ err, chatId: client.chatId }, 'clients/:id/messages: Avito API failed');
       res.status(502).json({ error: 'Не удалось получить сообщения из Авито' });
+    }
+  });
+
+  // POST /api/v1/clients/:id/send-message  { "text": "..." }
+  app.post('/api/v1/clients/:id/send-message', requireAuth, async (req: Request, res: Response) => {
+    const id = parseInt(String(req.params.id), 10);
+    if (isNaN(id)) {
+      res.status(400).json({ error: 'Некорректный ID' });
+      return;
+    }
+    const textRaw = req.body?.text;
+    const text = typeof textRaw === 'string' ? textRaw.trim() : '';
+    if (!text) {
+      res.status(400).json({ error: 'Укажите непустое поле text' });
+      return;
+    }
+
+    const client = getClientById(id);
+    if (!client) {
+      res.status(404).json({ error: 'Заявка не найдена' });
+      return;
+    }
+
+    try {
+      await sendMessage(client.chatId, text);
+      setClientTakenOverViaApi(client.id);
+      res.json({ ok: true, chat_id: client.chatId, botStopped: true });
+    } catch (err) {
+      logger.error({ err, chatId: client.chatId, clientId: id }, 'clients/:id/send-message: Avito API failed');
+      res.status(502).json({ error: 'Не удалось отправить сообщение в Авито' });
     }
   });
 

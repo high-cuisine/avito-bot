@@ -10,6 +10,7 @@ import {
 } from '../../integrations/avito/client.js';
 import { formatAllowlistRejectLog, resolveMessengerPeerName } from '../../integrations/avito/peer-label.js';
 import { enqueueIncomingMessage } from '../../application/messaging/batched-dispatcher.js';
+import { isConversationTakenOver } from '../../application/messaging/human-takeover.js';
 import { getRuntimeMode } from '../../infrastructure/storage/repository.js';
 
 interface WebhookPayload {
@@ -40,6 +41,12 @@ export async function startWebhookServer(): Promise<void> {
     if (!text) return;
 
     const runtimeMode = getRuntimeMode();
+
+    if (isConversationTakenOver(chatId)) {
+      logger.debug({ chatId, authorId }, 'webhook skipped: conversation taken over via API');
+      return;
+    }
+
     if (!shouldProcessSender(runtimeMode, chatId, authorId)) {
       if (runtimeMode === 'test') {
         let peerName = '—';

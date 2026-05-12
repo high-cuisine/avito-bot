@@ -14,6 +14,7 @@ import {
   saveClient,
   saveSession,
   setRuntimeMode,
+  setClientTakenOverViaApi,
   upsertChatEstimateRequest,
 } from './repository.js';
 
@@ -36,8 +37,12 @@ describe('repository', () => {
     const byChat = getClientByChatId('ch-1');
     expect(byChat?.phone).toBe('+79001234567');
     expect(byChat?.cargoDetails).toBe('2 паллеты, до 1.5 т');
+    expect(byChat?.botStopped).toBe(false);
     const byId = getClientById(byChat!.id);
     expect(byId?.chatId).toBe('ch-1');
+
+    expect(setClientTakenOverViaApi(byChat!.id)).toBe(true);
+    expect(getClientByChatId('ch-1')?.botStopped).toBe(true);
   });
 
   it('upsertChatEstimateRequest and get by id / since', () => {

@@ -9,6 +9,7 @@ import {
 } from '../../integrations/avito/client.js';
 import { formatAllowlistRejectLog, resolveMessengerPeerName } from '../../integrations/avito/peer-label.js';
 import { getRuntimeMode } from '../../infrastructure/storage/repository.js';
+import { isConversationTakenOver } from './human-takeover.js';
 import { enqueueIncomingMessage } from './batched-dispatcher.js';
 
 const repliedMessages = new Set<string>();
@@ -58,10 +59,17 @@ async function pollOnce(): Promise<void> {
         m.created >= BOT_START_TS,
     );
 
+    const takeover = isConversationTakenOver(chatId);
+
     for (const msg of incoming) {
       msg.chat_id = msg.chat_id || chatId;
       const text = msg.content?.text ?? '';
       if (!text || text.startsWith('[Системное сообщение]')) continue;
+
+      if (takeover) {
+        repliedMessages.add(msg.id);
+        continue;
+      }
 
       const runtimeMode = getRuntimeMode();
       if (!shouldProcessSender(runtimeMode, msg.chat_id, msg.author_id)) {
