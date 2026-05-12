@@ -1,6 +1,9 @@
-import { getClientBotStoppedByChatId } from '../../infrastructure/storage/repository.js';
+import {
+  getChatEstimateBotStoppedByChatId,
+  getClientBotStoppedByChatId,
+} from '../../infrastructure/storage/repository.js';
 
-/** Для этого чата диалог переведён на человека через API: входящие бот не обрабатывает. */
+/** Диалог переведён на человека через API (заявка с телефоном или расчёт без телефона). */
 export function isConversationTakenOver(chatId: string): boolean {
-  return getClientBotStoppedByChatId(chatId);
+  return getClientBotStoppedByChatId(chatId) || getChatEstimateBotStoppedByChatId(chatId);
 }

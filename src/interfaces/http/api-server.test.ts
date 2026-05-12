@@ -326,6 +326,40 @@ describe('createApiApp', () => {
     expect(res.status).toBe(409);
   });
 
+  it('POST /api/v1/chat-estimates/:id/send-message sends and sets estimate botStopped', async () => {
+    upsertChatEstimateRequest({
+      chatId: 'ce-manual-msg',
+      itemId: '1',
+      clientName: 'Клиент',
+      cargo: 'груз',
+      weight: '100 кг',
+      volume: '1 м3',
+      route: 'X — Y',
+      paymentMethod: 'нал',
+      details: null,
+    });
+    const { getChatEstimates, getChatEstimateById } = await import(
+      '../../infrastructure/storage/repository.js'
+    );
+    const id = getChatEstimates().find((e) => e.chatId === 'ce-manual-msg')!.id;
+    expect(getChatEstimateById(id)?.botStopped).toBe(false);
+
+    const { createApiApp } = await import('./api-server.js');
+    const res = await request(createApiApp())
+      .post(`/api/v1/chat-estimates/${id}/send-message`)
+      .set('Authorization', `Bearer ${API_TOKEN}`)
+      .send({ text: 'Пишите менеджеру по расчёту' });
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({
+      ok: true,
+      chat_id: 'ce-manual-msg',
+      botStopped: true,
+    });
+    expect(sendMessage).toHaveBeenCalledWith('ce-manual-msg', 'Пишите менеджеру по расчёту');
+    expect(getChatEstimateById(id)?.botStopped).toBe(true);
+  });
+
   it('runtime mode endpoints work', async () => {
     const { createApiApp } = await import('./api-server.js');
     const app = createApiApp();

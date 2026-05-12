@@ -106,6 +106,11 @@ try {
 } catch {
   // column already exists
 }
+try {
+  db.exec('ALTER TABLE chat_estimate_requests ADD COLUMN bot_stopped INTEGER NOT NULL DEFAULT 0');
+} catch {
+  // column already exists
+}
 
 export type LlmToolCall = {
   id: string;
@@ -399,6 +404,8 @@ export interface ChatEstimateRecord {
   route: string | null;
   paymentMethod: string | null;
   details: string | null;
+  /** Сообщение через REST API включило ручной режим: бот в этом чате не отвечает клиенту. */
+  botStopped: boolean;
   createdAt: string;
 }
 
@@ -415,8 +422,10 @@ export interface ChatEstimateUpsertInput {
 }
 
 const stmtUpsertChatEstimate = db.prepare(`
-  INSERT INTO chat_estimate_requests (chat_id, item_id, client_name, cargo, weight, volume, route, payment_method, details, created_at)
-  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+  INSERT INTO chat_estimate_requests (
+    chat_id, item_id, client_name, cargo, weight, volume, route, payment_method, details, bot_stopped, created_at
+  )
+  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, datetime('now'))
   ON CONFLICT(chat_id) DO UPDATE SET item_id         = excluded.item_id,
                                       client_name    = excluded.client_name,
                                       cargo          = excluded.cargo,
@@ -429,22 +438,30 @@ const stmtUpsertChatEstimate = db.prepare(`
 `);
 
 const stmtGetChatEstimates = db.prepare(
-  `SELECT id, chat_id, item_id, client_name, cargo, weight, volume, route, payment_method, details, created_at
+  `SELECT id, chat_id, item_id, client_name, cargo, weight, volume, route, payment_method, details, bot_stopped, created_at
    FROM chat_estimate_requests ORDER BY id DESC`,
 );
 const stmtGetChatEstimateById = db.prepare(
-  `SELECT id, chat_id, item_id, client_name, cargo, weight, volume, route, payment_method, details, created_at
+  `SELECT id, chat_id, item_id, client_name, cargo, weight, volume, route, payment_method, details, bot_stopped, created_at
    FROM chat_estimate_requests WHERE id = ?`,
 );
 const stmtGetChatEstimateByChatId = db.prepare(
-  `SELECT id, chat_id, item_id, client_name, cargo, weight, volume, route, payment_method, details, created_at
+  `SELECT id, chat_id, item_id, client_name, cargo, weight, volume, route, payment_method, details, bot_stopped, created_at
    FROM chat_estimate_requests WHERE chat_id = ?`,
 );
 const stmtGetChatEstimatesSince = db.prepare(
-  `SELECT id, chat_id, item_id, client_name, cargo, weight, volume, route, payment_method, details, created_at
+  `SELECT id, chat_id, item_id, client_name, cargo, weight, volume, route, payment_method, details, bot_stopped, created_at
    FROM chat_estimate_requests WHERE created_at >= ? ORDER BY id ASC`,
 );
 const stmtDeleteChatEstimate = db.prepare('DELETE FROM chat_estimate_requests WHERE id = ?');
+
+const stmtSetChatEstimateTakenOverViaApi = db.prepare(
+  `UPDATE chat_estimate_requests SET bot_stopped = 1 WHERE id = ?`,
+);
+
+const stmtGetChatEstimateBotStoppedByChatId = db.prepare(
+  `SELECT bot_stopped FROM chat_estimate_requests WHERE chat_id = ?`,
+);
 
 type ChatEstimateRow = {
   id: number;
@@ -457,6 +474,7 @@ type ChatEstimateRow = {
   route: string | null;
   payment_method: string | null;
   details: string | null;
+  bot_stopped: number;
   created_at: string;
 };
 
@@ -472,6 +490,7 @@ function chatEstimateRowToRecord(r: ChatEstimateRow): ChatEstimateRecord {
     route: r.route,
     paymentMethod: r.payment_method,
     details: r.details,
+    botStopped: (r.bot_stopped ?? 0) === 1,
     createdAt: r.created_at,
   };
 }
@@ -511,6 +530,17 @@ export function getChatEstimatesSince(since: string): ChatEstimateRecord[] {
 export function deleteChatEstimateRequest(id: number): boolean {
   const result = stmtDeleteChatEstimate.run(id);
   return result.changes > 0;
+}
+
+/** После отправки через API записи расчёта без телефона бот входящих в чат не обрабатывает. */
+export function setChatEstimateTakenOverViaApi(estimateId: number): boolean {
+  return stmtSetChatEstimateTakenOverViaApi.run(estimateId).changes > 0;
+}
+
+/** true, если есть chat_estimate_requests с этим chat_id и включён режим только человека */
+export function getChatEstimateBotStoppedByChatId(chatId: string): boolean {
+  const row = stmtGetChatEstimateBotStoppedByChatId.get(chatId) as { bot_stopped: number } | undefined;
+  return (row?.bot_stopped ?? 0) === 1;
 }
 
 /** Очистка данных для автотестов (Vitest). Не вызывать в продакшене. */

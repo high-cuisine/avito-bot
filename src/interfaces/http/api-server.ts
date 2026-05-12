@@ -14,6 +14,7 @@ import {
   deleteChatEstimateRequest,
   getRuntimeMode,
   setRuntimeMode,
+  setChatEstimateTakenOverViaApi,
   setClientTakenOverViaApi,
 } from '../../infrastructure/storage/repository.js';
 import { attachAdminPanel } from './admin-panel.js';
@@ -216,6 +217,12 @@ const swaggerDocument = {
             description: 'Дополнительные параметры для расчёта (габариты, даты и т.д.)',
             example: 'Погрузка 22.04, разгрузка с пандуса',
           },
+          botStopped: {
+            type: 'boolean',
+            description:
+              'Если true — уже отправляли сообщение оператором через REST API для этой строки расчёта (без телефона); бот в этом чате входящих не обрабатывает.',
+            example: false,
+          },
           createdAt: {
             type: 'string',
             format: 'date-time',
@@ -259,7 +266,8 @@ const swaggerDocument = {
         properties: {
           text: {
             type: 'string',
-            description: 'Текст сообщения в чат клиенту (от имени нашего аккаунта Авито)',
+            description:
+              'Текст сообщения в чат (от нашего аккаунта Авито). Для «расчёт без телефона» — POST `/chat-estimates/{id}/send-message`; для завершённой заявки с телефоном — POST `/clients/{id}/send-message`.',
             example: 'Уточните, пожалуйста, время погрузки.',
           },
         },
@@ -486,9 +494,9 @@ const swaggerDocument = {
     },
     '/clients/{id}/send-message': {
       post: {
-        summary: 'Отправить сообщение клиенту и отключить автоответ бота',
+        summary: 'Сообщение клиенту (заявка с телефоном)',
         description:
-          'Отправляет текст в чат Авито. После успешной отправки заявка помечается: больше не ставит ответов LLM в этом диалоге (webhook и поллинг сообщения клиента игнорируются). Отправить можно снова; флаг сохраняется.',
+          'По записи таблицы clients (клиент уже оставил телефон мимо расчёта без номера): отправляет текст в чат Авито и включает ручной режим — входящих бот больше не обрабатывает. Для чатов на этапе «расчёт без телефона» используйте POST /chat-estimates/{id}/send-message.',
         operationId: 'sendMessageToClient',
         tags: ['Заявки'],
         parameters: [
@@ -716,6 +724,66 @@ const swaggerDocument = {
           },
           '502': {
             description: 'Ошибка API Авито при отправке сообщения',
+            content: {
+              'application/json': { schema: { $ref: '#/components/schemas/Error' } },
+            },
+          },
+        },
+      },
+    },
+    '/chat-estimates/{id}/send-message': {
+      post: {
+        summary: 'Отправить сообщение в чат расчёта без телефона и отключить автоответ бота',
+        description:
+          'По ID записи chat-estimates (клиент без телефона, этап расчёта) отправляет текст в Авито. После успешной отправки запись помечается: бот дальнейшие входящие в этом чате не обрабатывает.',
+        operationId: 'sendMessageOnChatEstimate',
+        tags: ['Расчёт без телефона'],
+        parameters: [
+          {
+            name: 'id',
+            in: 'path',
+            required: true,
+            description: 'Внутренний ID записи chat_estimate_requests',
+            schema: { type: 'integer', example: 1 },
+          },
+        ],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: { $ref: '#/components/schemas/SendMessageToClientBody' },
+            },
+          },
+        },
+        responses: {
+          '200': {
+            description: 'Сообщение отправлено, бот для этого диалога остановлен',
+            content: {
+              'application/json': {
+                schema: { $ref: '#/components/schemas/SendMessageToClientResponse' },
+              },
+            },
+          },
+          '400': {
+            description: 'Нет текста или пустая строка',
+            content: {
+              'application/json': { schema: { $ref: '#/components/schemas/Error' } },
+            },
+          },
+          '401': {
+            description: 'Не авторизован',
+            content: {
+              'application/json': { schema: { $ref: '#/components/schemas/Error' } },
+            },
+          },
+          '404': {
+            description: 'Запись расчёта не найдена',
+            content: {
+              'application/json': { schema: { $ref: '#/components/schemas/Error' } },
+            },
+          },
+          '502': {
+            description: 'Ошибка API Авито при отправке',
             content: {
               'application/json': { schema: { $ref: '#/components/schemas/Error' } },
             },
@@ -953,6 +1021,40 @@ export function createApiApp(): express.Application {
     }
     res.json({ ok: true });
   });
+
+  // POST /api/v1/chat-estimates/:id/send-message  { "text": "..." }
+  app.post(
+    '/api/v1/chat-estimates/:id/send-message',
+    requireAuth,
+    async (req: Request, res: Response) => {
+      const id = parseInt(String(req.params.id), 10);
+      if (isNaN(id)) {
+        res.status(400).json({ error: 'Некорректный ID' });
+        return;
+      }
+      const textRaw = req.body?.text;
+      const text = typeof textRaw === 'string' ? textRaw.trim() : '';
+      if (!text) {
+        res.status(400).json({ error: 'Укажите непустое поле text' });
+        return;
+      }
+
+      const estimate = getChatEstimateById(id);
+      if (!estimate) {
+        res.status(404).json({ error: 'Запись не найдена' });
+        return;
+      }
+
+      try {
+        await sendMessage(estimate.chatId, text);
+        setChatEstimateTakenOverViaApi(estimate.id);
+        res.json({ ok: true, chat_id: estimate.chatId, botStopped: true });
+      } catch (err) {
+        logger.error({ err, chatId: estimate.chatId, estimateId: id }, 'chat-estimates/:id/send-message failed');
+        res.status(502).json({ error: 'Не удалось отправить сообщение в Авито' });
+      }
+    },
+  );
 
   // POST /api/v1/chat-estimates/:id/deliver-quote  { "price": "45 000 ₽" }
   app.post(

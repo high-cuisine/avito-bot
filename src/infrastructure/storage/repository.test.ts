@@ -4,6 +4,7 @@ import {
   deleteChatEstimateRequest,
   deleteClient,
   deleteSession,
+  getChatEstimateByChatId,
   getChatEstimateById,
   getChatEstimates,
   getChatEstimatesSince,
@@ -13,6 +14,7 @@ import {
   getRuntimeMode,
   saveClient,
   saveSession,
+  setChatEstimateTakenOverViaApi,
   setRuntimeMode,
   setClientTakenOverViaApi,
   upsertChatEstimateRequest,
@@ -62,6 +64,26 @@ describe('repository', () => {
     const row = getChatEstimateById(list[0]!.id)!;
     expect(row.chatId).toBe('ch-est');
     expect(row.details).toBe('до 5 т');
+    expect(row.botStopped).toBe(false);
+    expect(setChatEstimateTakenOverViaApi(row.id)).toBe(true);
+    expect(getChatEstimateByChatId('ch-est')?.botStopped).toBe(true);
+
+    upsertChatEstimateRequest({
+      chatId: 'ch-est',
+      itemId: 'i1',
+      clientName: 'Пётр',
+      cargo: 'паллеты',
+      weight: '2100 кг',
+      volume: '15 м3',
+      route: 'А — Б',
+      paymentMethod: 'безнал',
+      details: 'обновлено',
+    });
+    const rowAfterUpsert = getChatEstimateById(row.id)!;
+    expect(rowAfterUpsert.weight).toBe('2100 кг');
+    expect(rowAfterUpsert.details).toBe('обновлено');
+    expect(rowAfterUpsert.botStopped).toBe(true);
+
     const since = getChatEstimatesSince('2000-01-01');
     expect(since.length).toBe(1);
   });
