@@ -27,6 +27,8 @@ export interface AvitoMessage {
   created: number;
   type: string;
   content: MessageContent;
+  /** В ответе API мессенджера v3 */
+  direction?: 'in' | 'out';
 }
 
 export interface LastMessage {

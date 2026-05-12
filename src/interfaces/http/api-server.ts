@@ -16,7 +16,36 @@ import {
   setRuntimeMode,
 } from '../../infrastructure/storage/repository.js';
 import { attachAdminPanel } from './admin-panel.js';
-import { getChatById, getChatMessagesAll } from '../../integrations/avito/client.js';
+import type { AvitoMessage } from '../../integrations/avito/client.js';
+import { getChatMessagesAll, resolveUserId } from '../../integrations/avito/client.js';
+
+interface DialogMessageDto {
+  /** Unix timestamp (как отдаёт Авито) */
+  created: number;
+  /** Входящее от клиента / исходящее от нашего аккаунта Авито */
+  direction: 'in' | 'out';
+  text: string;
+}
+
+async function dialogFromAvitoMessages(messages: AvitoMessage[]): Promise<DialogMessageDto[]> {
+  const selfId = Number.parseInt(await resolveUserId(), 10);
+  return messages.map((msg) => {
+    const explicit = msg.direction;
+    let direction: 'in' | 'out';
+    if (explicit === 'in' || explicit === 'out') {
+      direction = explicit;
+    } else if (!Number.isNaN(selfId) && msg.author_id === selfId) {
+      direction = 'out';
+    } else {
+      direction = 'in';
+    }
+    return {
+      created: msg.created,
+      direction,
+      text: msg.content?.text ?? '',
+    };
+  });
+}
 
 // ─── OpenAPI spec ─────────────────────────────────────────────────────────────
 
@@ -232,45 +261,33 @@ const swaggerDocument = {
         },
         required: ['mode'],
       },
-      AvitoMessageContent: {
+      DialogMessage: {
         type: 'object',
-        nullable: true,
+        description: 'Одно сообщение диалога (только текст и направление)',
         properties: {
-          text: { type: 'string', nullable: true },
-        },
-      },
-      AvitoMessengerMessage: {
-        type: 'object',
-        description: 'Сообщение из API мессенджера Авито',
-        properties: {
-          id: { type: 'string' },
-          author_id: { type: 'integer' },
-          chat_id: { type: 'string' },
           created: { type: 'integer', description: 'Unix timestamp от Авито' },
-          type: { type: 'string' },
-          content: { $ref: '#/components/schemas/AvitoMessageContent' },
+          direction: {
+            type: 'string',
+            enum: ['in', 'out'],
+            description:
+              '`in` — от клиента, `out` — от вашего аккаунта. Берётся из ответа Авито или по author_id.',
+          },
+          text: { type: 'string', description: 'Текст сообщения' },
         },
+        required: ['created', 'direction', 'text'],
       },
-      ClientConversation: {
+      ClientDialog: {
         type: 'object',
-        description:
-          'Полная история переписки из чата Авито по записи клиента из БД бота (сообщения отсортированы по времени).',
+        description: 'Диалог из чата Авито по заявке (хронологический порядок)',
         properties: {
           clientId: { type: 'integer' },
           chatId: { type: 'string' },
-          chat: {
-            nullable: true,
-            description: 'Метаданные чата из Авито (может быть null, если загрузить не удалось)',
-            type: 'object',
-            additionalProperties: true,
-          },
-          total: { type: 'integer', description: 'Число сообщений' },
           messages: {
             type: 'array',
-            items: { $ref: '#/components/schemas/AvitoMessengerMessage' },
+            items: { $ref: '#/components/schemas/DialogMessage' },
           },
         },
-        required: ['clientId', 'chatId', 'total', 'messages'],
+        required: ['clientId', 'chatId', 'messages'],
       },
     },
   },
@@ -391,9 +408,9 @@ const swaggerDocument = {
     },
     '/clients/{id}/messages': {
       get: {
-        summary: 'История переписки из Авито',
+        summary: 'Диалог из Авито (только реплики)',
         description:
-          'По внутреннему ID заявки находит chat_id и выгружает всю историю сообщений из мессенджера Авито (постранично, до конца). Сообщения в ответе идут в хронологическом порядке.',
+          'По внутреннему ID заявки загружает историю чата и возвращает только текстовые реплики с временем и направлением (клиент `in` / наш аккаунт `out`).',
         operationId: 'getClientConversation',
         tags: ['Заявки'],
         parameters: [
@@ -410,7 +427,7 @@ const swaggerDocument = {
             description: 'Успешно',
             content: {
               'application/json': {
-                schema: { $ref: '#/components/schemas/ClientConversation' },
+                schema: { $ref: '#/components/schemas/ClientDialog' },
               },
             },
           },
@@ -735,16 +752,11 @@ export function createApiApp(): express.Application {
       return;
     }
     try {
-      const chatP = getChatById(client.chatId).catch((err: unknown) => {
-        logger.warn({ err, chatId: client.chatId }, 'clients/:id/messages: метаданные чата недоступны');
-        return null;
-      });
-      const [chat, messages] = await Promise.all([chatP, getChatMessagesAll(client.chatId)]);
+      const rawMessages = await getChatMessagesAll(client.chatId);
+      const messages = await dialogFromAvitoMessages(rawMessages);
       res.json({
         clientId: client.id,
         chatId: client.chatId,
-        chat,
-        total: messages.length,
         messages,
       });
     } catch (err) {

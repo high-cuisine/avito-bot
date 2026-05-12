@@ -7,12 +7,12 @@ import {
 } from '../../infrastructure/storage/repository.js';
 
 const sendMessage = vi.hoisted(() => vi.fn().mockResolvedValue({}));
-const getChatById = vi.hoisted(() => vi.fn().mockResolvedValue({ id: 'mock-chat', users: [] }));
+const resolveUserId = vi.hoisted(() => vi.fn().mockResolvedValue('222'));
 const getChatMessagesAll = vi.hoisted(() => vi.fn().mockResolvedValue([]));
 
 vi.mock('../../integrations/avito/client.js', () => ({
   sendMessage,
-  getChatById,
+  resolveUserId,
   getChatMessagesAll,
 }));
 
@@ -22,9 +22,9 @@ describe('createApiApp', () => {
   beforeEach(() => {
     clearDatabaseForTests();
     sendMessage.mockClear();
-    getChatById.mockClear();
+    resolveUserId.mockClear();
     getChatMessagesAll.mockClear();
-    getChatById.mockResolvedValue({ id: 'mock-chat', users: [] });
+    resolveUserId.mockResolvedValue('222');
     getChatMessagesAll.mockResolvedValue([]);
   });
 
@@ -71,11 +71,6 @@ describe('createApiApp', () => {
     const { getClientByChatId } = await import('../../infrastructure/storage/repository.js');
     const id = getClientByChatId('avito-chat-xyz')!.id;
 
-    getChatById.mockResolvedValueOnce({
-      id: 'avito-chat-xyz',
-      users: [{ id: 111, name: 'Пётр' }],
-      context: { type: 'item', value: { title: 'Объявление' } },
-    });
     getChatMessagesAll.mockResolvedValueOnce([
       {
         id: 'm1',
@@ -103,9 +98,12 @@ describe('createApiApp', () => {
     expect(res.status).toBe(200);
     expect(res.body.clientId).toBe(id);
     expect(res.body.chatId).toBe('avito-chat-xyz');
-    expect(res.body.total).toBe(2);
-    expect(res.body.messages[1].content.text).toBe('Здравствуйте!');
+    expect(res.body.messages).toEqual([
+      { created: 1700001000, direction: 'in', text: 'Здравствуйте' },
+      { created: 1700002000, direction: 'out', text: 'Здравствуйте!' },
+    ]);
     expect(getChatMessagesAll).toHaveBeenCalledWith('avito-chat-xyz');
+    expect(resolveUserId).toHaveBeenCalled();
   });
 
   it('GET /api/v1/clients/:id/messages 502 when Avito fails', async () => {
