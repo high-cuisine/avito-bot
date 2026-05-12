@@ -941,6 +941,12 @@ export function createApiApp(): express.Application {
 
     const client = getClientById(id);
     if (!client) {
+      if (getChatEstimateById(id)) {
+        res.status(404).json({
+          error: 'Это запись расчёта без телефона (таблица chat-estimates). Используйте POST /api/v1/chat-estimates/:id/send-message',
+        });
+        return;
+      }
       res.status(404).json({ error: 'Заявка не найдена' });
       return;
     }
@@ -1041,6 +1047,13 @@ export function createApiApp(): express.Application {
 
       const estimate = getChatEstimateById(id);
       if (!estimate) {
+        if (getClientById(id)) {
+          res.status(404).json({
+            error:
+              'Это заявка с телефоном из таблицы clients. Используйте POST /api/v1/clients/:id/send-message',
+          });
+          return;
+        }
         res.status(404).json({ error: 'Запись не найдена' });
         return;
       }
