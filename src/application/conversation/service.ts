@@ -5,7 +5,7 @@ import {
   getChatById,
   type AvitoChat,
 } from '../../integrations/avito/client.js';
-import { classifyClosingMessage, classifyPriceReaction, runLlmTurn } from '../../integrations/openai/chat.js';
+import { classifyClosingMessage, classifyEstimateFields, classifyPriceReaction, runLlmTurn, type EstimateFieldsPresent } from '../../integrations/openai/chat.js';
 import { postSubmitWebhook } from '../../integrations/webhook/submit-lead.js';
 import { executeSubmitPhoneBackfill } from './execute-submit.js';
 import {
@@ -116,6 +116,8 @@ const FLOOR_METERS_RE = /(метр|по\s+длине\s+пола|длина\s+п�
 const PALLET_RE = /(\d+[\s.,]*)?(палет|паллет|паллета|паллеты|паллетов|поддон|поддона|поддонов)/i;
 const ESTIMATE_DIFFICULTY_RE =
   /(затрудня|затруднит|сложн[оа]\s+ответ|не\s+(знаю|понимаю|разбираюсь|могу\s+(сказать|ответить|понять|оценить))|как\s+(посчитать|измерить|указать|понять|определить)|не\s+уверен)/i;
+
+const LETS_IN_CHAT_RE = /давай(те)?\s+в\s+чате/i;
 
 function isPhoneRefusalText(text: string): boolean {
   if (!text) return false;
@@ -370,6 +372,26 @@ function anchorSequentialEstimateAnswer(history: LlmChatMessage[], text: string)
   return `${fieldLabel(target)}: ${clean}`;
 }
 
+function collectAllUserMessages(history: LlmChatMessage[], currentText: string): string[] {
+  const prev = history
+    .filter((m): m is { role: 'user'; content: string } => m.role === 'user')
+    .map((m) => m.content)
+    .filter(Boolean);
+  return [...prev, currentText];
+}
+
+function buildFollowupFromFields(fields: EstimateFieldsPresent): string | null {
+  const missing: string[] = [];
+  if (!fields.route) missing.push('маршрут');
+  if (!fields.cargo) missing.push('характер груза');
+  if (!fields.weight) missing.push('вес');
+  if (!fields.volume) missing.push('объем');
+  if (!fields.payment) missing.push('форму оплаты');
+  if (!fields.floorMeters) missing.push('сколько метров по длине пола займет груз в кузове');
+  if (missing.length === 0 || missing.length === 6) return null;
+  return `Принято. Для расчета в чате без номера уточните, пожалуйста: ${missing.join(', ')}.`;
+}
+
 function emptyData(): SessionData {
   return {
     itemId: '',
@@ -582,6 +604,14 @@ export async function handleConversation(
       return INVALID_PHONE_REPLY;
     }
 
+    const userMsgCount = history.filter((m) => m.role === 'user').length;
+    if (userMsgCount === 1 && LETS_IN_CHAT_RE.test(text.trim())) {
+      data.chatMode = 'survey_estimate_only';
+      appendTurn(data, text, [{ role: 'assistant', content: ESTIMATE_ONLY_START_PROMPT }]);
+      saveSession(chatId, LLM_STATE, data);
+      return ESTIMATE_ONLY_START_PROMPT;
+    }
+
     const knownPhoneNorm =
       data.capturedPhone?.trim() ||
       (data.phone?.trim() ? normalizePhone(data.phone) : null) ||
@@ -601,11 +631,9 @@ export async function handleConversation(
     if (!result) {
       if (isWithoutPhoneChoiceText(text)) {
         data.chatMode = 'survey_estimate_only';
-        const collected = collectUserTextForEstimate(history, text);
-        const followup = hasConcreteEstimateData(collected)
-          ? buildEstimateOnlyFollowupFromText(collected)
-          : null;
-        const scriptReply = followup ?? ESTIMATE_ONLY_START_PROMPT;
+        const allMessages = collectAllUserMessages(history, text);
+        const fields = await classifyEstimateFields(allMessages);
+        const scriptReply = buildFollowupFromFields(fields) ?? ESTIMATE_ONLY_START_PROMPT;
         appendTurn(data, text, [{ role: 'assistant', content: scriptReply }]);
         saveSession(chatId, LLM_STATE, data);
         return scriptReply;
@@ -624,11 +652,9 @@ export async function handleConversation(
     }
     let decidedReply = result.reply || PHONE_INTENT_FOLLOWUP_REPLY;
     if (targetData.chatMode === 'survey_estimate_only') {
-      const collected = collectUserTextForEstimate(history, text);
-      const followup = hasConcreteEstimateData(collected)
-        ? buildEstimateOnlyFollowupFromText(collected)
-        : null;
-      decidedReply = followup ?? ESTIMATE_ONLY_START_PROMPT;
+      const allMessages = collectAllUserMessages(history, text);
+      const fields = await classifyEstimateFields(allMessages);
+      decidedReply = buildFollowupFromFields(fields) ?? ESTIMATE_ONLY_START_PROMPT;
       for (let i = result.newHistoryEntries.length - 1; i >= 0; i -= 1) {
         const entry = result.newHistoryEntries[i];
         if (entry.role === 'assistant') {

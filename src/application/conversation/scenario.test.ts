@@ -4,6 +4,7 @@ import { clearDatabaseForTests, getSession, saveSession, type SessionData } from
 const runLlmTurn = vi.hoisted(() => vi.fn());
 const classifyPriceReaction = vi.hoisted(() => vi.fn());
 const classifyClosingMessage = vi.hoisted(() => vi.fn());
+const classifyEstimateFields = vi.hoisted(() => vi.fn());
 const postSubmitWebhook = vi.hoisted(() => vi.fn().mockResolvedValue(true));
 const resolveUserId = vi.hoisted(() => vi.fn().mockResolvedValue('bot'));
 const getChatById = vi.hoisted(() =>
@@ -20,6 +21,7 @@ vi.mock('../../integrations/openai/chat.js', () => ({
   runLlmTurn,
   classifyPriceReaction,
   classifyClosingMessage,
+  classifyEstimateFields,
 }));
 vi.mock('../../integrations/webhook/submit-lead.js', () => ({
   postSubmitWebhook,
@@ -64,6 +66,10 @@ describe('conversation scenarios from scenario-cases.md', () => {
     classifyClosingMessage.mockImplementation(async (text: string) =>
       /(спасибо|договорились|ждем|ждём|ок|окей|понял|понятно)/i.test(text),
     );
+    classifyEstimateFields.mockReset();
+    classifyEstimateFields.mockResolvedValue({
+      route: false, cargo: false, weight: false, volume: false, payment: false, floorMeters: false,
+    });
     postSubmitWebhook.mockReset();
     postSubmitWebhook.mockResolvedValue(true);
   });
@@ -95,6 +101,9 @@ describe('conversation scenarios from scenario-cases.md', () => {
     );
     expect(step1).toBe('Здравствуйте. Напишите свой номер телефона, свяжемся с Вами и обсудим детали грузоперевозки.');
 
+    classifyEstimateFields.mockResolvedValueOnce({
+      route: true, cargo: true, weight: false, volume: false, payment: false, floorMeters: false,
+    });
     const step2 = await handleConversation('scn-multiload-refusal-then-data', 'все детали выше');
     expect(step2).toBe(
       'Принято. Для расчета в чате без номера уточните, пожалуйста: вес, объем, форму оплаты, сколько метров по длине пола займет груз в кузове.',
@@ -270,6 +279,9 @@ describe('conversation scenarios from scenario-cases.md', () => {
     const step1 = await handleConversation('scn-ctx-followup', 'добрый день, мск спб, стекло, 2 тонны');
     expect(step1).toBe('Здравствуйте. Напишите свой номер телефона, свяжемся с Вами и обсудим детали грузоперевозки.');
 
+    classifyEstimateFields.mockResolvedValueOnce({
+      route: true, cargo: true, weight: true, volume: false, payment: false, floorMeters: false,
+    });
     const step2 = await handleConversation('scn-ctx-followup', 'номер не дам');
     expect(step2).toContain('Принято. Для расчета в чате без номера уточните, пожалуйста:');
     expect(step2).toContain('объем');
@@ -353,7 +365,9 @@ describe('conversation scenarios from scenario-cases.md', () => {
     });
     const { handleConversation } = await import('./service.js');
     const reply = await handleConversation('scn-est-wait-cb', 'когда перезвоните?');
-    expect(reply).toBe('Мы работаем в будни с 9:00 до 18:00 по Москве.');
+    expect(reply).toBe(
+      'Мы работаем в будни с 8-00 до 18-00  в рабочие дни пн-пт по Москве.В начала рабочего времени, у нас будут данные какие машины будут свободные под Ваш груз.И сориентировать Вас по стоимости.',
+    );
   });
 
   it('scn-post-quote-neutral-falls-to-phone-backfill', async () => {
@@ -405,6 +419,9 @@ describe('conversation scenarios from scenario-cases.md', () => {
     // Клиент пишет КАПСЛОКОМ; бот должен корректно распознать маршрут/груз/вес и спросить только недостающее
     const { handleConversation } = await import('./service.js');
     await handleConversation('scn-caps', 'ДОБРЫЙ ДЕНЬ МСК СПБ СТЕКЛО 2 ТОННЫ');
+    classifyEstimateFields.mockResolvedValueOnce({
+      route: true, cargo: true, weight: true, volume: false, payment: false, floorMeters: false,
+    });
     const reply = await handleConversation('scn-caps', 'НЕ ДАМ НОМЕР');
     expect(reply).toContain('Принято. Для расчета в чате без номера уточните, пожалуйста:');
     expect(reply).toContain('объем');

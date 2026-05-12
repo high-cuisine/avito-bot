@@ -12,6 +12,7 @@ import {
 const runLlmTurn = vi.hoisted(() => vi.fn());
 const classifyPriceReaction = vi.hoisted(() => vi.fn());
 const classifyClosingMessage = vi.hoisted(() => vi.fn());
+const classifyEstimateFields = vi.hoisted(() => vi.fn());
 const postSubmitWebhook = vi.hoisted(() => vi.fn().mockResolvedValue(true));
 const resolveUserId = vi.hoisted(() => vi.fn().mockResolvedValue('bot'));
 const getChatById = vi.hoisted(() =>
@@ -28,6 +29,7 @@ vi.mock('../../integrations/openai/chat.js', () => ({
   runLlmTurn,
   classifyPriceReaction,
   classifyClosingMessage,
+  classifyEstimateFields,
 }));
 vi.mock('../../integrations/webhook/submit-lead.js', () => ({
   postSubmitWebhook,
@@ -73,6 +75,10 @@ describe('conversation service templates', () => {
     classifyClosingMessage.mockImplementation(async (text: string) =>
       /(спасибо|договорились|ждем|ждём|ок|окей|понял|понятно)/i.test(text),
     );
+    classifyEstimateFields.mockReset();
+    classifyEstimateFields.mockResolvedValue({
+      route: false, cargo: false, weight: false, volume: false, payment: false, floorMeters: false,
+    });
     postSubmitWebhook.mockReset();
     postSubmitWebhook.mockResolvedValue(true);
   });
@@ -105,7 +111,9 @@ describe('conversation service templates', () => {
     await handleConversation('ch-hours', '+79000000000');
 
     const hours = await handleConversation('ch-hours', 'когда перезвоните?');
-    expect(hours).toBe('Мы работаем в будни с 9-00 до 18-00 по Москве.');
+    expect(hours).toBe(
+      'Мы работаем в будни с 8-00 до 18-00  в рабочие дни пн-пт по Москве.В начала рабочего времени, у нас будут данные какие машины будут свободные под Ваш груз.И сориентировать Вас по стоимости.',
+    );
   });
 
   it('does not answer callback-hours on "ждем" after phone-only completion', async () => {
@@ -227,7 +235,9 @@ describe('conversation service templates', () => {
     expect(getClientByChatId('ch-pq')?.phone).toBe('+79001234567');
 
     const hours = await handleConversation('ch-pq', 'когда перезвоните');
-    expect(hours).toBe('Мы работаем в будни с 9:00 до 18:00 по Москве.');
+    expect(hours).toBe(
+      'Мы работаем в будни с 8-00 до 18-00  в рабочие дни пн-пт по Москве.В начала рабочего времени, у нас будут данные какие машины будут свободные под Ваш груз.И сориентировать Вас по стоимости.',
+    );
   });
 
   it('post-quote negative returns fixed budget phrase', async () => {
@@ -334,6 +344,9 @@ describe('conversation service templates', () => {
       'ch-first-partial-estimate',
       'добрый день\nпосчитайте стоимость\nмск спб\nстекло\n2 тонны',
     );
+    classifyEstimateFields.mockResolvedValueOnce({
+      route: true, cargo: true, weight: true, volume: false, payment: false, floorMeters: false,
+    });
     const reply = await handleConversation('ch-first-partial-estimate', 'номер не дам');
     expect(reply).toContain('Для расчета в чате без номера уточните, пожалуйста:');
     expect(reply).toContain('объем');
@@ -350,6 +363,9 @@ describe('conversation service templates', () => {
       'ch-multiload',
       'загрузка\n1) аксайский проспект 19А даска 45*145*4м - 11шт\n2) ул. Днепропетровская 52а брус 45*45*3 - 27шт\nвыгрузка\nул. Изумрудная 9',
     );
+    classifyEstimateFields.mockResolvedValueOnce({
+      route: true, cargo: true, weight: false, volume: false, payment: false, floorMeters: false,
+    });
     const reply = await handleConversation('ch-multiload', 'все детали выше');
     expect(reply).toContain('вес');
     expect(reply).toContain('объем');
@@ -365,6 +381,9 @@ describe('conversation service templates', () => {
       'ch-short-calc-request',
       'добрый день, нужна перевозка спб москва стекло 2 тонны 2 куба наличка',
     );
+    classifyEstimateFields.mockResolvedValueOnce({
+      route: true, cargo: true, weight: true, volume: true, payment: true, floorMeters: false,
+    });
     const reply = await handleConversation('ch-short-calc-request', 'расчитайте');
     expect(reply).toContain('Для расчета в чате без номера уточните, пожалуйста:');
     expect(reply).toContain('сколько метров по длине пола займет груз в кузове');
@@ -381,6 +400,9 @@ describe('conversation service templates', () => {
       'ch-pallets',
       'добрый день, нужна перевозка спб москва стекло 2 тонны наличка',
     );
+    classifyEstimateFields.mockResolvedValueOnce({
+      route: true, cargo: true, weight: true, volume: false, payment: true, floorMeters: false,
+    });
     const first = await handleConversation('ch-pallets', 'детали все есть');
     expect(first).toContain('объем');
     expect(first).toContain('сколько метров по длине пола займет груз в кузове');
@@ -658,6 +680,9 @@ describe('conversation service templates', () => {
     const { handleConversation } = await import('./service.js');
 
     await handleConversation('ch-scn-missing-only', 'добрый день');
+    classifyEstimateFields.mockResolvedValueOnce({
+      route: true, cargo: true, weight: true, volume: false, payment: false, floorMeters: false,
+    });
     const reply = await handleConversation(
       'ch-scn-missing-only',
       'номер не дам, считаем тут: мск спб, стекло, 2 тонны',

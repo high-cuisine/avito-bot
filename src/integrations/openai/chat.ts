@@ -864,6 +864,74 @@ export async function classifyPriceReaction(userMessage: string): Promise<PriceR
   }
 }
 
+export interface EstimateFieldsPresent {
+  route: boolean;
+  cargo: boolean;
+  weight: boolean;
+  volume: boolean;
+  payment: boolean;
+  floorMeters: boolean;
+}
+
+export async function classifyEstimateFields(allMessages: string[]): Promise<EstimateFieldsPresent> {
+  const fallback: EstimateFieldsPresent = {
+    route: false,
+    cargo: false,
+    weight: false,
+    volume: false,
+    payment: false,
+    floorMeters: false,
+  };
+
+  if (!allMessages.length) return fallback;
+
+  const conversationText = allMessages.join('\n---\n');
+
+  const response = await callChatCompletions({
+    model: config.openai.model,
+    messages: [
+      {
+        role: 'system',
+        content:
+          'Ты анализируешь переписку клиента транспортной компании. Определи, какие из 6 полей для расчёта грузоперевозки явно и конкретно присутствуют в тексте.\n\n' +
+          'Поля:\n' +
+          '1. route — маршрут (города или адреса: откуда и куда везти)\n' +
+          '2. cargo — характер груза (что везём: вид товара, описание)\n' +
+          '3. weight — вес (числа с единицами: кг, тонн, т)\n' +
+          '4. volume — объём (м³, куб) или количество паллет/поддонов\n' +
+          '5. payment — форма оплаты (наличные / безнал / с НДС / без НДС)\n' +
+          '6. floorMeters — метров по полу в кузове или количество паллет/поддонов\n\n' +
+          'Правила:\n' +
+          '- true только если поле явно указано конкретным значением\n' +
+          '- Фразы без конкретики («все указано», «давайте в чате», «не хочу», «нет», «ок») = false для всех полей\n' +
+          '- Приветствия («добрый день», «здравствуйте») = false для всех полей\n' +
+          '- Паллеты/поддоны считаются одновременно volume:true и floorMeters:true\n\n' +
+          'Верни строго JSON без пояснений:\n' +
+          '{"route":true|false,"cargo":true|false,"weight":true|false,"volume":true|false,"payment":true|false,"floorMeters":true|false}',
+      },
+      { role: 'user', content: conversationText },
+    ],
+    temperature: 0,
+    max_tokens: 100,
+  });
+
+  const text = (response?.message?.content ?? '').trim();
+
+  try {
+    const parsed = JSON.parse(text) as Partial<Record<string, unknown>>;
+    return {
+      route: parsed.route === true,
+      cargo: parsed.cargo === true,
+      weight: parsed.weight === true,
+      volume: parsed.volume === true,
+      payment: parsed.payment === true,
+      floorMeters: parsed.floorMeters === true,
+    };
+  } catch {
+    return fallback;
+  }
+}
+
 export async function classifyClosingMessage(userMessage: string): Promise<boolean> {
   const first = await callChatCompletions({
     model: config.openai.model,
