@@ -154,6 +154,10 @@ export async function getChats(params: GetChatsParams = {}): Promise<ChatsRespon
   return fetchJson<ChatsResponse>(`${BASE}/messenger/v2/accounts/${userId}/chats?${qs}`, { headers });
 }
 
+export function sliceMessages(data: MessagesResponse): AvitoMessage[] {
+  return data.messages ?? data.result?.messages ?? [];
+}
+
 export async function getChatMessages(
   chatId: string,
   { limit = 50, offset = 0 }: GetMessagesParams = {},
@@ -165,6 +169,28 @@ export async function getChatMessages(
     `${BASE}/messenger/v3/accounts/${userId}/chats/${chatId}/messages/?${qs}`,
     { headers },
   );
+}
+
+const CHAT_MESSAGES_ALL_PAGE = 100;
+const CHAT_MESSAGES_ALL_MAX_PAGES = 500;
+
+/** Все сообщения чата: постранично до исчерпания истории (с лимитом страниц для защиты от зацикливания). */
+export async function getChatMessagesAll(
+  chatId: string,
+  pageSize = CHAT_MESSAGES_ALL_PAGE,
+): Promise<AvitoMessage[]> {
+  const out: AvitoMessage[] = [];
+  let offset = 0;
+
+  for (let page = 0; page < CHAT_MESSAGES_ALL_MAX_PAGES; page += 1) {
+    const data = await getChatMessages(chatId, { limit: pageSize, offset });
+    const batch = sliceMessages(data);
+    out.push(...batch);
+    if (batch.length < pageSize) break;
+    offset += pageSize;
+  }
+
+  return out.sort((a, b) => a.created - b.created);
 }
 
 export async function sendMessage(chatId: string, text: string): Promise<unknown> {

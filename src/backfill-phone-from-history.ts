@@ -1,6 +1,6 @@
 import { validateConfig } from './core/config.js';
 import { logger } from './core/logger.js';
-import { getAccessToken, getChatMessages } from './integrations/avito/client.js';
+import { getAccessToken, getChatMessages, sliceMessages } from './integrations/avito/client.js';
 import {
   getClientsMissingPhone,
   updateClientPhoneByChatId,
@@ -53,7 +53,7 @@ function extractPhoneFromText(text: string): string | null {
 async function tryExtractPhone(client: ClientRecord, scanLimit: number): Promise<string | null> {
   try {
     const data = await getChatMessages(client.chatId, { limit: scanLimit, offset: 0 });
-    const messages = data.messages ?? data.result?.messages ?? [];
+    const messages = sliceMessages(data);
 
     for (const message of messages) {
       const text = message.content?.text ?? '';

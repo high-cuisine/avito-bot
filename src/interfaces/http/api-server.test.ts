@@ -7,9 +7,13 @@ import {
 } from '../../infrastructure/storage/repository.js';
 
 const sendMessage = vi.hoisted(() => vi.fn().mockResolvedValue({}));
+const getChatById = vi.hoisted(() => vi.fn().mockResolvedValue({ id: 'mock-chat', users: [] }));
+const getChatMessagesAll = vi.hoisted(() => vi.fn().mockResolvedValue([]));
 
 vi.mock('../../integrations/avito/client.js', () => ({
   sendMessage,
+  getChatById,
+  getChatMessagesAll,
 }));
 
 const API_TOKEN = 'vitest-api-secret-token';
@@ -18,6 +22,10 @@ describe('createApiApp', () => {
   beforeEach(() => {
     clearDatabaseForTests();
     sendMessage.mockClear();
+    getChatById.mockClear();
+    getChatMessagesAll.mockClear();
+    getChatById.mockResolvedValue({ id: 'mock-chat', users: [] });
+    getChatMessagesAll.mockResolvedValue([]);
   });
 
   it('GET /health', async () => {
@@ -48,6 +56,77 @@ describe('createApiApp', () => {
       .get('/api/v1/clients/999')
       .set('Authorization', `Bearer ${API_TOKEN}`);
     expect(res.status).toBe(404);
+  });
+
+  it('GET /api/v1/clients/:id/messages returns Avito transcript', async () => {
+    saveClient({
+      chatId: 'avito-chat-xyz',
+      itemId: 'i9',
+      clientName: 'Пётр',
+      cargo: 'Тест',
+      route: 'А — Б',
+      paymentMethod: 'нал',
+      phone: '+79001112233',
+    });
+    const { getClientByChatId } = await import('../../infrastructure/storage/repository.js');
+    const id = getClientByChatId('avito-chat-xyz')!.id;
+
+    getChatById.mockResolvedValueOnce({
+      id: 'avito-chat-xyz',
+      users: [{ id: 111, name: 'Пётр' }],
+      context: { type: 'item', value: { title: 'Объявление' } },
+    });
+    getChatMessagesAll.mockResolvedValueOnce([
+      {
+        id: 'm1',
+        author_id: 111,
+        chat_id: 'avito-chat-xyz',
+        created: 1700001000,
+        type: 'text',
+        content: { text: 'Здравствуйте' },
+      },
+      {
+        id: 'm2',
+        author_id: 222,
+        chat_id: 'avito-chat-xyz',
+        created: 1700002000,
+        type: 'text',
+        content: { text: 'Здравствуйте!' },
+      },
+    ]);
+
+    const { createApiApp } = await import('./api-server.js');
+    const res = await request(createApiApp())
+      .get(`/api/v1/clients/${id}/messages`)
+      .set('Authorization', `Bearer ${API_TOKEN}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.clientId).toBe(id);
+    expect(res.body.chatId).toBe('avito-chat-xyz');
+    expect(res.body.total).toBe(2);
+    expect(res.body.messages[1].content.text).toBe('Здравствуйте!');
+    expect(getChatMessagesAll).toHaveBeenCalledWith('avito-chat-xyz');
+  });
+
+  it('GET /api/v1/clients/:id/messages 502 when Avito fails', async () => {
+    saveClient({
+      chatId: 'bad-chat',
+      itemId: '',
+      clientName: '',
+      cargo: 'x',
+      route: 'y',
+      paymentMethod: 'z',
+      phone: '+79000000001',
+    });
+    const { getClientByChatId } = await import('../../infrastructure/storage/repository.js');
+    const id = getClientByChatId('bad-chat')!.id;
+    getChatMessagesAll.mockRejectedValueOnce(new Error('Avito API 500'));
+
+    const { createApiApp } = await import('./api-server.js');
+    const res = await request(createApiApp())
+      .get(`/api/v1/clients/${id}/messages`)
+      .set('Authorization', `Bearer ${API_TOKEN}`);
+    expect(res.status).toBe(502);
   });
 
   it('GET /api/v1/clients/:id returns cargoDetails', async () => {

@@ -16,6 +16,7 @@ import {
   setRuntimeMode,
 } from '../../infrastructure/storage/repository.js';
 import { attachAdminPanel } from './admin-panel.js';
+import { getChatById, getChatMessagesAll } from '../../integrations/avito/client.js';
 
 // ─── OpenAPI spec ─────────────────────────────────────────────────────────────
 
@@ -231,6 +232,46 @@ const swaggerDocument = {
         },
         required: ['mode'],
       },
+      AvitoMessageContent: {
+        type: 'object',
+        nullable: true,
+        properties: {
+          text: { type: 'string', nullable: true },
+        },
+      },
+      AvitoMessengerMessage: {
+        type: 'object',
+        description: 'Сообщение из API мессенджера Авито',
+        properties: {
+          id: { type: 'string' },
+          author_id: { type: 'integer' },
+          chat_id: { type: 'string' },
+          created: { type: 'integer', description: 'Unix timestamp от Авито' },
+          type: { type: 'string' },
+          content: { $ref: '#/components/schemas/AvitoMessageContent' },
+        },
+      },
+      ClientConversation: {
+        type: 'object',
+        description:
+          'Полная история переписки из чата Авито по записи клиента из БД бота (сообщения отсортированы по времени).',
+        properties: {
+          clientId: { type: 'integer' },
+          chatId: { type: 'string' },
+          chat: {
+            nullable: true,
+            description: 'Метаданные чата из Авито (может быть null, если загрузить не удалось)',
+            type: 'object',
+            additionalProperties: true,
+          },
+          total: { type: 'integer', description: 'Число сообщений' },
+          messages: {
+            type: 'array',
+            items: { $ref: '#/components/schemas/AvitoMessengerMessage' },
+          },
+        },
+        required: ['clientId', 'chatId', 'total', 'messages'],
+      },
     },
   },
   security: [{ BearerAuth: [] }],
@@ -341,6 +382,52 @@ const swaggerDocument = {
           },
           '404': {
             description: 'Не найдено',
+            content: {
+              'application/json': { schema: { $ref: '#/components/schemas/Error' } },
+            },
+          },
+        },
+      },
+    },
+    '/clients/{id}/messages': {
+      get: {
+        summary: 'История переписки из Авито',
+        description:
+          'По внутреннему ID заявки находит chat_id и выгружает всю историю сообщений из мессенджера Авито (постранично, до конца). Сообщения в ответе идут в хронологическом порядке.',
+        operationId: 'getClientConversation',
+        tags: ['Заявки'],
+        parameters: [
+          {
+            name: 'id',
+            in: 'path',
+            required: true,
+            description: 'Внутренний ID заявки (как в GET /clients/{id})',
+            schema: { type: 'integer', example: 1 },
+          },
+        ],
+        responses: {
+          '200': {
+            description: 'Успешно',
+            content: {
+              'application/json': {
+                schema: { $ref: '#/components/schemas/ClientConversation' },
+              },
+            },
+          },
+          '401': {
+            description: 'Не авторизован',
+            content: {
+              'application/json': { schema: { $ref: '#/components/schemas/Error' } },
+            },
+          },
+          '404': {
+            description: 'Заявка не найдена',
+            content: {
+              'application/json': { schema: { $ref: '#/components/schemas/Error' } },
+            },
+          },
+          '502': {
+            description: 'Ошибка API Авито при загрузке сообщений',
             content: {
               'application/json': { schema: { $ref: '#/components/schemas/Error' } },
             },
@@ -633,6 +720,37 @@ export function createApiApp(): express.Application {
     const since = req.query.since as string | undefined;
     const items = since ? getClientsSince(since) : getClients();
     res.json({ total: items.length, items });
+  });
+
+  // GET /api/v1/clients/:id/messages — история из мессенджера Авито
+  app.get('/api/v1/clients/:id/messages', requireAuth, async (req: Request, res: Response) => {
+    const id = parseInt(String(req.params.id), 10);
+    if (isNaN(id)) {
+      res.status(400).json({ error: 'Некорректный ID' });
+      return;
+    }
+    const client = getClientById(id);
+    if (!client) {
+      res.status(404).json({ error: 'Заявка не найдена' });
+      return;
+    }
+    try {
+      const chatP = getChatById(client.chatId).catch((err: unknown) => {
+        logger.warn({ err, chatId: client.chatId }, 'clients/:id/messages: метаданные чата недоступны');
+        return null;
+      });
+      const [chat, messages] = await Promise.all([chatP, getChatMessagesAll(client.chatId)]);
+      res.json({
+        clientId: client.id,
+        chatId: client.chatId,
+        chat,
+        total: messages.length,
+        messages,
+      });
+    } catch (err) {
+      logger.error({ err, chatId: client.chatId }, 'clients/:id/messages: Avito API failed');
+      res.status(502).json({ error: 'Не удалось получить сообщения из Авито' });
+    }
   });
 
   // GET /api/v1/clients/:id
