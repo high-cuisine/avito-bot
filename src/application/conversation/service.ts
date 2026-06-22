@@ -1,4 +1,4 @@
-import { normalizePhone } from '../../core/phone.js';
+import { extractPhoneLikeDigits, normalizePhone, normalizePhoneFromMessage } from '../../core/phone.js';
 import { logger } from '../../core/logger.js';
 import {
   resolveUserId,
@@ -167,24 +167,6 @@ function enforceNoPhoneInEstimateMode(mode: SessionData['chatMode'], reply: stri
 
 function hasAnyAssistantHistory(history: LlmChatMessage[]): boolean {
   return history.some((m) => m.role === 'assistant');
-}
-
-function extractPhoneLikeDigits(text: string): string | null {
-  const m = text.match(/\+?\d[\d\s().-]{7,}\d/);
-  if (!m) return null;
-  const digits = m[0].replace(/\D/g, '');
-  return digits || null;
-}
-
-function normalizePhoneFromMessage(text: string): string | null {
-  const direct = normalizePhone(text);
-  if (direct) return direct;
-  const matches = text.match(/\+?\d[\d\s().-]{7,}\d/g) ?? [];
-  for (const m of matches) {
-    const normalized = normalizePhone(m);
-    if (normalized) return normalized;
-  }
-  return null;
 }
 
 function getInvalidPhoneAttemptKey(text: string): string | null {

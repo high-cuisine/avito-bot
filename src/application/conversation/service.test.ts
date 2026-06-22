@@ -105,6 +105,27 @@ describe('conversation service templates', () => {
     expect(getClientByChatId('ch-first-phone')?.phone).toBe('+79005554433');
   });
 
+  it('does not treat cargo route description as phone after phone prompt', async () => {
+    const { handleConversation } = await import('./service.js');
+    const { PHONE_INTENT_FOLLOWUP_REPLY } = await import('./copy.js');
+    await handleConversation('ch-cargo-not-phone', 'привет');
+
+    const cargoMessage = [
+      'маршрут москва - санкт-петербург',
+      'груз: даска 45*145*4м - 11шт, брус 45*45*3 - 27шт',
+      'загрузка: ул. Днепропетровская 52а',
+      'выгрузка: ул. Изумрудная 9',
+      '2 тонны, 3 куба, наличка',
+    ].join('\n');
+
+    const reply = await handleConversation('ch-cargo-not-phone', cargoMessage);
+
+    expect(reply).not.toBe('Спасибо, мы перезвоним вам в ближайшее время.');
+    expect(reply).toBe(PHONE_INTENT_FOLLOWUP_REPLY);
+    expect(getSession('ch-cargo-not-phone')?.data.chatMode).toBe('phone_intent');
+    expect(getClientByChatId('ch-cargo-not-phone')?.phone).toBeFalsy();
+  });
+
   it('answers callback-hours after phone-only completion', async () => {
     const { handleConversation } = await import('./service.js');
     await handleConversation('ch-hours', 'привет');

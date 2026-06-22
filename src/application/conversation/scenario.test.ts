@@ -178,6 +178,27 @@ describe('conversation scenarios from scenario-cases.md', () => {
     expect(reply).toBe('Здравствуйте. Напишите свой номер телефона, свяжемся с Вами и обсудим детали грузоперевозки.');
   });
 
+  it('scn-cargo-route-after-phone-prompt-not-phone', async () => {
+    const { handleConversation } = await import('./service.js');
+    const { PHONE_INTENT_FOLLOWUP_REPLY } = await import('./copy.js');
+    await handleConversation('scn-cargo-route-after-phone-prompt', 'добрый день');
+
+    const reply = await handleConversation(
+      'scn-cargo-route-after-phone-prompt',
+      [
+        'маршрут москва - санкт-петербург',
+        'груз: даска 45*145*4м - 11шт, брус 45*45*3 - 27шт',
+        'загрузка: ул. Днепропетровская 52а',
+        'выгрузка: ул. Изумрудная 9',
+        '2 тонны, 3 куба, наличка',
+      ].join('\n'),
+    );
+
+    expect(reply).not.toBe('Спасибо, мы перезвоним вам в ближайшее время.');
+    expect(reply).toBe(PHONE_INTENT_FOLLOWUP_REPLY);
+    expect(getSession('scn-cargo-route-after-phone-prompt')?.data.chatMode).toBe('phone_intent');
+  });
+
   it('scn-nonstandard-greeting-then-chat-choice', async () => {
     const { handleConversation } = await import('./service.js');
 

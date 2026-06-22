@@ -28,27 +28,7 @@ function isDryRun(): boolean {
   return String(process.env.BACKFILL_DRY_RUN || '').toLowerCase() === 'true';
 }
 
-function normalizePhone(raw: string): string | null {
-  const digits = raw.replace(/\D/g, '');
-  if (digits.length === 11 && digits.startsWith('8')) return `+7${digits.slice(1)}`;
-  if (digits.length === 11 && digits.startsWith('7')) return `+${digits}`;
-  if (digits.length === 10) return `+7${digits}`;
-  return null;
-}
-
-function extractPhoneFromText(text: string): string | null {
-  // catches +7..., 8..., with spaces/dashes/parentheses
-  const candidates =
-    text.match(/(?:\+7|8)[\s\-()]*\d(?:[\s\-()]*\d){9,10}/g) ??
-    text.match(/\b\d(?:[\s\-()]*\d){9,10}\b/g) ??
-    [];
-
-  for (const candidate of candidates) {
-    const phone = normalizePhone(candidate);
-    if (phone) return phone;
-  }
-  return null;
-}
+import { normalizePhoneFromMessage } from './core/phone.js';
 
 async function tryExtractPhone(client: ClientRecord, scanLimit: number): Promise<string | null> {
   try {
@@ -58,7 +38,7 @@ async function tryExtractPhone(client: ClientRecord, scanLimit: number): Promise
     for (const message of messages) {
       const text = message.content?.text ?? '';
       if (!text) continue;
-      const phone = extractPhoneFromText(text);
+      const phone = normalizePhoneFromMessage(text);
       if (phone) return phone;
     }
   } catch (err) {
